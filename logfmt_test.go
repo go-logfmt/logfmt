@@ -9,28 +9,18 @@ import (
 	"github.com/go-logfmt/logfmt"
 )
 
-func TestEncodeKeyValue(t *testing.T) {
-	nilPtr := (*int)(nil)
-
+func TestEncodeKeyval(t *testing.T) {
 	data := []struct {
 		key, value interface{}
 		want       string
 		err        error
 	}{
-		{key: nil, value: nil, err: logfmt.ErrNilKey},
-		{key: nilPtr, value: nil, err: logfmt.ErrNilKey},
+		{key: "k", value: "v", want: "k=v"},
 		{key: "k", value: nil, want: "k=nil"},
-		{key: " ", value: "v", err: logfmt.ErrInvalidKey},
-		{key: "=", value: "v", err: logfmt.ErrInvalidKey},
-		{key: `"`, value: "v", err: logfmt.ErrInvalidKey},
-		{key: stringMarshaler(" "), value: "v", err: logfmt.ErrInvalidKey},
-		{key: stringData(" "), value: "v", err: logfmt.ErrInvalidKey},
 		{key: `\`, value: "v", want: `\=v`},
-		{key: "k", value: nilPtr, want: "k=nil"},
 		{key: "k", value: "", want: "k="},
 		{key: "k", value: "nil", want: `k="nil"`},
 		{key: "k", value: "<nil>", want: `k=<nil>`},
-		{key: "k", value: "v", want: "k=v"},
 		{key: "k", value: true, want: "k=true"},
 		{key: "k", value: 1, want: "k=1"},
 		{key: "k", value: 1.025, want: "k=1.025"},
@@ -43,15 +33,17 @@ func TestEncodeKeyValue(t *testing.T) {
 		{key: "k", value: `\`, want: `k=\`},
 		{key: "k", value: `=\`, want: `k="=\\"`},
 		{key: "k", value: `\"`, want: `k="\\\""`},
-		{key: "k", value: [2]int{2, 19}, want: `k[0]=2 k[1]=19"`},
-		{key: "k", value: []string{"e1", "e 2"}, want: `k[0]=e1 k[1]="e 2"`},
-		{key: "k", value: structData{"a a", 9}, want: `k.fieldA="a a" k.B=9`},
+		{key: "k", value: [2]int{2, 19}, err: logfmt.ErrUnsportedType},
+		{key: "k", value: []string{"e1", "e 2"}, err: logfmt.ErrUnsportedType},
+		{key: "k", value: structData{"a a", 9}, err: logfmt.ErrUnsportedType},
 		{key: "k", value: decimalMarshaler{5, 9}, want: "k=5.9"},
 		{key: "k", value: (*decimalMarshaler)(nil), want: "k=nil"},
 		{key: "k", value: decimalStringer{5, 9}, want: "k=5.9"},
 		{key: "k", value: (*decimalStringer)(nil), want: "k=nil"},
 		{key: "k", value: marshalerStringer{5, 9}, want: "k=5.9"},
 		{key: "k", value: (*marshalerStringer)(nil), want: "k=nil"},
+		{key: "k", value: new(nilMarshaler), want: "k=notnilmarshaler"},
+		{key: "k", value: (*nilMarshaler)(nil), want: "k=nilmarshaler"},
 		{key: (*marshalerStringer)(nil), value: "v", err: logfmt.ErrNilKey},
 		{key: decimalMarshaler{5, 9}, value: "v", want: "5.9=v"},
 		{key: (*decimalMarshaler)(nil), value: "v", err: logfmt.ErrNilKey},
@@ -63,9 +55,12 @@ func TestEncodeKeyValue(t *testing.T) {
 	for _, d := range data {
 		w := &bytes.Buffer{}
 		enc := logfmt.NewEncoder(w)
-		err := enc.EncodeKeyValue(d.key, d.value)
+		err := enc.EncodeKeyval(d.key, d.value)
 		if err != d.err {
 			t.Errorf("%#v, %#v: got error: %v, want error: %v", d.key, d.value, err, d.err)
+		}
+		if err != nil {
+			continue
 		}
 		if got, want := w.String(), d.want; got != want {
 			t.Errorf("%#v, %#v: got '%s', want '%s'", d.key, d.value, got, want)
@@ -149,6 +144,15 @@ type stringMarshaler string
 
 func (s stringMarshaler) MarshalText() ([]byte, error) {
 	return []byte(s), nil
+}
+
+type nilMarshaler int
+
+func (m *nilMarshaler) MarshalText() ([]byte, error) {
+	if m == nil {
+		return []byte("nilmarshaler"), nil
+	}
+	return []byte("notnilmarshaler"), nil
 }
 
 type decimalMarshaler struct {

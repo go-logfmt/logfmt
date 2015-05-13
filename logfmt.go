@@ -69,16 +69,13 @@ var ErrNilKey = errors.New("nil key")
 // contains an invalid character.
 var ErrInvalidKey = errors.New("invalid key")
 
+// ErrUnsportedType is returned by Marshal functions and Encoder methods if a
+// key or value has an unsupported type.
+var ErrUnsportedType = errors.New("unsupported type")
+
 // EncodeKeyval writes the logfmt encoding of key and value to the stream. A
 // single space is written before the second and subsequent keys in a record.
 func (enc *Encoder) EncodeKeyval(key, value interface{}) error {
-	if key == nil {
-		return ErrNilKey
-	}
-	rkey := reflect.ValueOf(key)
-	if rkey.Kind() == reflect.Ptr && rkey.IsNil() {
-		return ErrNilKey
-	}
 	if enc.needSep {
 		if _, err := enc.w.Write(space); err != nil {
 			return err
@@ -95,87 +92,111 @@ func (enc *Encoder) EncodeKeyval(key, value interface{}) error {
 	return enc.writeValue(value)
 }
 
-func (enc *Encoder) writeKey(kv interface{}) (err error) {
-	switch v := kv.(type) {
-	case string:
-		if strings.ContainsAny(v, ` "=`) {
-			return ErrInvalidKey
-		}
-		_, err = io.WriteString(enc.w, v)
-	case encoding.TextMarshaler:
-		defer func() {
-			if recErr := recover(); recErr != nil {
-				if v := reflect.ValueOf(kv); v.Kind() == reflect.Ptr && v.IsNil() {
-					_, err = enc.w.Write(nilbytes)
-				} else {
-					panic(recErr)
-				}
-			}
-		}()
-		var b []byte
-		b, err = v.MarshalText()
-		if err != nil {
-			return
-		}
-		if bytes.IndexAny(b, ` "=`) >= 0 {
-			return ErrInvalidKey
-		}
-		_, err = enc.w.Write(b)
-	default:
-		str := fmt.Sprint(v)
-		if strings.ContainsAny(str, ` "=`) {
-			return ErrInvalidKey
-		}
-		_, err = io.WriteString(enc.w, str)
+func (enc *Encoder) writeKey(key interface{}) error {
+	if key == nil {
+		return ErrNilKey
 	}
+
+	switch k := key.(type) {
+	case string:
+		return enc.writeStringKey(k)
+	case encoding.TextMarshaler:
+		kb, err := safeMarshal(k)
+		if err != nil {
+			return err
+		}
+		if kb == nil {
+			return ErrNilKey
+		}
+		return enc.writeBytesKey(kb)
+	case fmt.Stringer:
+		ks, ok := safeString(k)
+		if !ok {
+			return ErrNilKey
+		}
+		return enc.writeStringKey(ks)
+	default:
+		rkey := reflect.ValueOf(key)
+		switch rkey.Kind() {
+		case reflect.Array, reflect.Chan, reflect.Func, reflect.Map, reflect.Slice, reflect.Struct:
+			return ErrUnsportedType
+		case reflect.Ptr:
+			if rkey.IsNil() {
+				return ErrNilKey
+			}
+		}
+		return enc.writeStringKey(fmt.Sprint(k))
+	}
+}
+
+func invalidKeyRune(r rune) bool {
+	return r <= ' ' || r == '=' || r == '"'
+}
+
+func (enc *Encoder) writeStringKey(key string) error {
+	if len(key) == 0 || strings.IndexFunc(key, invalidKeyRune) != -1 {
+		return ErrInvalidKey
+	}
+	_, err := io.WriteString(enc.w, key)
 	return err
 }
 
-func (enc *Encoder) writeValue(kv interface{}) (err error) {
-	switch v := kv.(type) {
-	case nil:
-		enc.w.Write(nilbytes)
-	case string:
-		if strings.ContainsAny(v, ` "=`) {
-			v = strconv.Quote(v)
-		}
-		if v == "nil" {
-			v = `"nil"`
-		}
-		_, err = io.WriteString(enc.w, v)
-	case encoding.TextMarshaler:
-		defer func() {
-			if recErr := recover(); recErr != nil {
-				if v := reflect.ValueOf(kv); v.Kind() == reflect.Ptr && v.IsNil() {
-					_, err = enc.w.Write(nilbytes)
-				} else {
-					panic(recErr)
-				}
-			}
-		}()
-		var b []byte
-		b, err = v.MarshalText()
-		if err != nil {
-			return
-		}
-		format := "%s"
-		if bytes.IndexAny(b, ` "=`) >= 0 {
-			format = "%q"
-		}
-		fmt.Fprintf(enc.w, format, b)
-	default:
-		str := fmt.Sprint(v)
-		if strings.ContainsAny(str, ` "=`) {
-			str = strconv.Quote(str)
-		}
-		switch str {
-		case "nil":
-			str = `"nil"`
-		case "<nil>":
-			str = "nil"
-		}
-		io.WriteString(enc.w, str)
+func (enc *Encoder) writeBytesKey(key []byte) error {
+	if len(key) == 0 || bytes.IndexFunc(key, invalidKeyRune) != -1 {
+		return ErrInvalidKey
 	}
+	_, err := enc.w.Write(key)
+	return err
+}
+
+func (enc *Encoder) writeValue(value interface{}) error {
+	switch v := value.(type) {
+	case nil:
+		return enc.writeBytesValue(nilbytes)
+	case string:
+		return enc.writeStringValue(v, true)
+	case encoding.TextMarshaler:
+		vb, err := safeMarshal(v)
+		if err != nil {
+			return err
+		}
+		if vb == nil {
+			vb = nilbytes
+		}
+		return enc.writeBytesValue(vb)
+	case fmt.Stringer:
+		return enc.writeStringValue(safeString(v))
+	default:
+		rvalue := reflect.ValueOf(value)
+		switch rvalue.Kind() {
+		case reflect.Array, reflect.Chan, reflect.Func, reflect.Map, reflect.Slice, reflect.Struct:
+			return ErrUnsportedType
+		case reflect.Ptr:
+			if rvalue.IsNil() {
+				return enc.writeBytesValue(nilbytes)
+			}
+		}
+		vs := fmt.Sprint(v)
+		return enc.writeStringValue(vs, true)
+	}
+}
+
+func (enc *Encoder) writeStringValue(value string, ok bool) error {
+	if ok && value == "nil" {
+		value = `"nil"`
+	} else if strings.ContainsAny(value, ` "=`) {
+		value = strconv.Quote(value)
+	}
+	_, err := io.WriteString(enc.w, value)
+	return err
+}
+
+func (enc *Encoder) writeBytesValue(value []byte) error {
+	format := "%s"
+	if bytes.IndexAny(value, ` "=`) >= 0 {
+		format = "%q"
+	}
+	_, err := fmt.Fprintf(enc.w, format, value)
 	return err
 }
 
@@ -192,4 +213,32 @@ func (enc *Encoder) EndRecord() error {
 // Reset resets the encoder to the beginning of a new record.
 func (enc *Encoder) Reset() {
 	enc.needSep = false
+}
+
+func safeString(str fmt.Stringer) (s string, ok bool) {
+	defer func() {
+		if panicVal := recover(); panicVal != nil {
+			if v := reflect.ValueOf(str); v.Kind() == reflect.Ptr && v.IsNil() {
+				s, ok = "nil", false
+			} else {
+				panic(panicVal)
+			}
+		}
+	}()
+	s, ok = str.String(), true
+	return
+}
+
+func safeMarshal(tm encoding.TextMarshaler) (b []byte, err error) {
+	defer func() {
+		if panicVal := recover(); panicVal != nil {
+			if v := reflect.ValueOf(tm); v.Kind() == reflect.Ptr && v.IsNil() {
+				b, err = nil, nil
+			} else {
+				panic(panicVal)
+			}
+		}
+	}()
+	b, err = tm.MarshalText()
+	return
 }
