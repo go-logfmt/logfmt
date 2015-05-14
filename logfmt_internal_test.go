@@ -7,7 +7,7 @@ import (
 )
 
 func TestSafeString(t *testing.T) {
-	_, ok := safeString((*stringer)(nil))
+	_, ok := safeString((*stringStringer)(nil))
 	if got, want := ok, false; got != want {
 		t.Errorf(" got %v, want %v", got, want)
 	}
@@ -21,12 +21,6 @@ func TestSafeMarshal(t *testing.T) {
 	if got, want := err, error(nil); got != want {
 		t.Errorf(" got %v, want %v", got, want)
 	}
-}
-
-type stringer int
-
-func (s stringer) String() string {
-	return fmt.Sprintf("%d", s)
 }
 
 func TestWriteKeyStrings(t *testing.T) {
@@ -109,6 +103,92 @@ func TestWriteKey(t *testing.T) {
 		}
 		if got, want := w.String(), d.want; got != want {
 			t.Errorf("%#v: got '%s', want '%s'", d.key, got, want)
+		}
+	}
+}
+
+func TestWriteValueStrings(t *testing.T) {
+	keygen := []func(string) interface{}{
+		func(s string) interface{} { return s },
+		func(s string) interface{} { return stringData(s) },
+		func(s string) interface{} { return stringStringer(s) },
+		func(s string) interface{} { return stringMarshaler(s) },
+	}
+
+	data := []struct {
+		value string
+		want  string
+		err   error
+	}{
+		{value: "", want: ""},
+		{value: "v", want: "v"},
+		{value: " ", want: `" "`},
+		{value: "=", want: `"="`},
+		{value: `\`, want: `\`},
+		{value: `"`, want: `"\""`},
+		{value: `\"`, want: `"\\\""`},
+		{value: "\n", want: `"\n"`},
+		{value: "\x00", want: `"\u0000"`},
+		{value: "\x10", want: `"\u0010"`},
+		{value: "\x1F", want: `"\u001f"`},
+		{value: "µ", want: `µ`},
+	}
+
+	for _, g := range keygen {
+		for _, d := range data {
+			w := &bytes.Buffer{}
+			enc := NewEncoder(w)
+			value := g(d.value)
+			err := enc.writeValue(value)
+			if err != d.err {
+				t.Errorf("%#v (%[1]T): got error: %v, want error: %v", value, err, d.err)
+			}
+			if err != nil {
+				continue
+			}
+			if got, want := w.String(), d.want; got != want {
+				t.Errorf("%#v (%[1]T): got '%s', want '%s'", value, got, want)
+			}
+		}
+	}
+}
+
+func TestWriteValue(t *testing.T) {
+	var (
+		nilPtr *int
+	)
+
+	data := []struct {
+		value interface{}
+		want  string
+		err   error
+	}{
+		{value: nil, want: "null"},
+		{value: nilPtr, want: "null"},
+		{value: (*stringStringer)(nil), want: "null"},
+		{value: (*stringMarshaler)(nil), want: "null"},
+		{value: (*stringerMarshaler)(nil), want: "null"},
+
+		{value: make(chan int), err: ErrUnsportedType},
+		{value: []int{}, err: ErrUnsportedType},
+		{value: map[int]int{}, err: ErrUnsportedType},
+		{value: [2]int{}, err: ErrUnsportedType},
+		{value: struct{}{}, err: ErrUnsportedType},
+		{value: fmt.Sprint, err: ErrUnsportedType},
+	}
+
+	for _, d := range data {
+		w := &bytes.Buffer{}
+		enc := NewEncoder(w)
+		err := enc.writeValue(d.value)
+		if err != d.err {
+			t.Errorf("%#v: got error: %v, want error: %v", d.value, err, d.err)
+		}
+		if err != nil {
+			continue
+		}
+		if got, want := w.String(), d.want; got != want {
+			t.Errorf("%#v: got '%s', want '%s'", d.value, got, want)
 		}
 	}
 }

@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"strconv"
 	"strings"
 )
 
@@ -58,7 +57,7 @@ var (
 	space    = []byte(" ")
 	equals   = []byte("=")
 	newline  = []byte("\n")
-	nilbytes = []byte("nil")
+	nilbytes = []byte("null")
 )
 
 // ErrNilKey is returned by Marshal functions and Encoder methods if a key is
@@ -181,22 +180,29 @@ func (enc *Encoder) writeValue(value interface{}) error {
 	}
 }
 
+func needsQuotedValueRune(r rune) bool {
+	return r <= ' ' || r == '=' || r == '"'
+}
+
 func (enc *Encoder) writeStringValue(value string, ok bool) error {
-	if ok && value == "nil" {
-		value = `"nil"`
-	} else if strings.ContainsAny(value, ` "=`) {
-		value = strconv.Quote(value)
+	var err error
+	if ok && value == "null" {
+		_, err = io.WriteString(enc.w, `"null"`)
+	} else if strings.IndexFunc(value, needsQuotedValueRune) != -1 {
+		_, err = enc.writeQuotedString(value)
+	} else {
+		_, err = io.WriteString(enc.w, value)
 	}
-	_, err := io.WriteString(enc.w, value)
 	return err
 }
 
 func (enc *Encoder) writeBytesValue(value []byte) error {
-	format := "%s"
-	if bytes.IndexAny(value, ` "=`) >= 0 {
-		format = "%q"
+	var err error
+	if bytes.IndexFunc(value, needsQuotedValueRune) >= 0 {
+		_, err = enc.writeQuotedBytes(value)
+	} else {
+		_, err = enc.w.Write(value)
 	}
-	_, err := fmt.Fprintf(enc.w, format, value)
 	return err
 }
 
@@ -219,7 +225,7 @@ func safeString(str fmt.Stringer) (s string, ok bool) {
 	defer func() {
 		if panicVal := recover(); panicVal != nil {
 			if v := reflect.ValueOf(str); v.Kind() == reflect.Ptr && v.IsNil() {
-				s, ok = "nil", false
+				s, ok = "null", false
 			} else {
 				panic(panicVal)
 			}
