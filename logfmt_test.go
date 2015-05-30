@@ -2,6 +2,7 @@ package logfmt_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -33,9 +34,9 @@ func TestEncodeKeyval(t *testing.T) {
 		{key: "k", value: `\`, want: `k=\`},
 		{key: "k", value: `=\`, want: `k="=\\"`},
 		{key: "k", value: `\"`, want: `k="\\\""`},
-		{key: "k", value: [2]int{2, 19}, err: logfmt.ErrUnsportedType},
-		{key: "k", value: []string{"e1", "e 2"}, err: logfmt.ErrUnsportedType},
-		{key: "k", value: structData{"a a", 9}, err: logfmt.ErrUnsportedType},
+		{key: "k", value: [2]int{2, 19}, err: logfmt.ErrUnsupportedValueType},
+		{key: "k", value: []string{"e1", "e 2"}, err: logfmt.ErrUnsupportedValueType},
+		{key: "k", value: structData{"a a", 9}, err: logfmt.ErrUnsupportedValueType},
 		{key: "k", value: decimalMarshaler{5, 9}, want: "k=5.9"},
 		{key: "k", value: (*decimalMarshaler)(nil), want: "k=null"},
 		{key: "k", value: decimalStringer{5, 9}, want: "k=5.9"},
@@ -58,9 +59,6 @@ func TestEncodeKeyval(t *testing.T) {
 		err := enc.EncodeKeyval(d.key, d.value)
 		if err != d.err {
 			t.Errorf("%#v, %#v: got error: %v, want error: %v", d.key, d.value, err, d.err)
-		}
-		if err != nil {
-			continue
 		}
 		if got, want := w.String(), d.want; got != want {
 			t.Errorf("%#v, %#v: got '%s', want '%s'", d.key, d.value, got, want)
@@ -86,7 +84,6 @@ func TestMarshalKeyvals(t *testing.T) {
 		{in: kv("k", nil), want: []byte("k=null")},
 		{in: kv("k", ""), want: []byte("k=")},
 		{in: kv("k", "null"), want: []byte(`k="null"`)},
-		{in: kv("k", "<nil>"), want: []byte(`k=<nil>`)},
 		{in: kv("k", "v"), want: []byte("k=v")},
 		{in: kv("k", true), want: []byte("k=true")},
 		{in: kv("k", 1), want: []byte("k=1")},
@@ -101,6 +98,9 @@ func TestMarshalKeyvals(t *testing.T) {
 		{in: kv("k", `=\`), want: []byte(`k="=\\"`)},
 		{in: kv("k", `\"`), want: []byte(`k="\\\""`)},
 		{in: kv("k1", "v1", "k2", "v2"), want: []byte("k1=v1 k2=v2")},
+		{in: kv("k1", "v1", "k2", [2]int{}), want: []byte("k1=v1 k2=\"unsupported value type\"")},
+		{in: kv([2]int{}, "v1", "k2", "v2"), want: []byte("k2=v2")},
+		{in: kv("k", errorMarshaler{}), want: []byte("k=\"error marshaling value of type logfmt_test.errorMarshaler: marshal error\"")},
 		{in: kv("k", decimalMarshaler{5, 9}), want: []byte("k=5.9")},
 		{in: kv("k", (*decimalMarshaler)(nil)), want: []byte("k=null")},
 		{in: kv("k", decimalStringer{5, 9}), want: []byte("k=5.9")},
@@ -120,8 +120,7 @@ func TestMarshalKeyvals(t *testing.T) {
 	for _, d := range data {
 		got, err := logfmt.MarshalKeyvals(d.in...)
 		if err != d.err {
-			t.Errorf("unexpected error marshaling %+v: %v", d.in, err)
-			continue
+			t.Errorf("%#v: got error: %v, want error: %v", d.in, err, d.err)
 		}
 		if got, want := got, d.want; !reflect.DeepEqual(got, want) {
 			t.Errorf("%#v: got '%s', want '%s'", d.in, got, want)
@@ -185,4 +184,12 @@ func (t marshalerStringer) MarshalText() ([]byte, error) {
 
 func (t marshalerStringer) String() string {
 	return fmt.Sprint(t.a + t.b)
+}
+
+var marshalError = errors.New("marshal error")
+
+type errorMarshaler struct{}
+
+func (errorMarshaler) MarshalText() ([]byte, error) {
+	return nil, marshalError
 }

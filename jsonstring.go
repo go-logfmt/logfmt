@@ -2,7 +2,7 @@ package logfmt
 
 import (
 	"bytes"
-
+	"io"
 	"unicode/utf8"
 )
 
@@ -15,7 +15,7 @@ import (
 var hex = "0123456789abcdef"
 
 // NOTE: keep in sync with writeQuotedBytes below.
-func (enc *Encoder) writeQuotedString(s string) (int, error) {
+func writeQuotedString(w io.Writer, s string) (int, error) {
 	buf := &bytes.Buffer{}
 	buf.WriteByte('"')
 	start := 0
@@ -67,11 +67,11 @@ func (enc *Encoder) writeQuotedString(s string) (int, error) {
 		buf.WriteString(s[start:])
 	}
 	buf.WriteByte('"')
-	return enc.w.Write(buf.Bytes())
+	return w.Write(buf.Bytes())
 }
 
 // NOTE: keep in sync with writeQuoteString above.
-func (enc *Encoder) writeQuotedBytes(s []byte) (int, error) {
+func writeQuotedBytes(w io.Writer, s []byte) (int, error) {
 	buf := &bytes.Buffer{}
 	buf.WriteByte('"')
 	start := 0
@@ -123,5 +123,5 @@ func (enc *Encoder) writeQuotedBytes(s []byte) (int, error) {
 		buf.Write(s[start:])
 	}
 	buf.WriteByte('"')
-	return enc.w.Write(buf.Bytes())
+	return w.Write(buf.Bytes())
 }

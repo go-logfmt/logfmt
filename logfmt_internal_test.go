@@ -2,7 +2,9 @@ package logfmt
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -51,9 +53,8 @@ func TestWriteKeyStrings(t *testing.T) {
 	for _, g := range keygen {
 		for _, d := range data {
 			w := &bytes.Buffer{}
-			enc := NewEncoder(w)
 			key := g(d.key)
-			err := enc.writeKey(key)
+			err := writeKey(w, key)
 			if err != d.err {
 				t.Errorf("%#v (%[1]T): got error: %v, want error: %v", key, err, d.err)
 			}
@@ -70,6 +71,8 @@ func TestWriteKeyStrings(t *testing.T) {
 func TestWriteKey(t *testing.T) {
 	var (
 		nilPtr *int
+		one    = 1
+		ptr    = &one
 	)
 
 	data := []struct {
@@ -82,20 +85,21 @@ func TestWriteKey(t *testing.T) {
 		{key: (*stringStringer)(nil), err: ErrNilKey},
 		{key: (*stringMarshaler)(nil), err: ErrNilKey},
 		{key: (*stringerMarshaler)(nil), err: ErrNilKey},
+		{key: ptr, want: "1"},
 
-		{key: make(chan int), err: ErrUnsportedType},
-		{key: []int{}, err: ErrUnsportedType},
-		{key: map[int]int{}, err: ErrUnsportedType},
-		{key: [2]int{}, err: ErrUnsportedType},
-		{key: struct{}{}, err: ErrUnsportedType},
-		{key: fmt.Sprint, err: ErrUnsportedType},
+		{key: errorMarshaler{}, err: &MarshalerError{Type: reflect.TypeOf(errorMarshaler{}), Err: marshalError}},
+		{key: make(chan int), err: ErrUnsupportedKeyType},
+		{key: []int{}, err: ErrUnsupportedKeyType},
+		{key: map[int]int{}, err: ErrUnsupportedKeyType},
+		{key: [2]int{}, err: ErrUnsupportedKeyType},
+		{key: struct{}{}, err: ErrUnsupportedKeyType},
+		{key: fmt.Sprint, err: ErrUnsupportedKeyType},
 	}
 
 	for _, d := range data {
 		w := &bytes.Buffer{}
-		enc := NewEncoder(w)
-		err := enc.writeKey(d.key)
-		if err != d.err {
+		err := writeKey(w, d.key)
+		if !reflect.DeepEqual(err, d.err) {
 			t.Errorf("%#v: got error: %v, want error: %v", d.key, err, d.err)
 		}
 		if err != nil {
@@ -110,6 +114,7 @@ func TestWriteKey(t *testing.T) {
 func TestWriteValueStrings(t *testing.T) {
 	keygen := []func(string) interface{}{
 		func(s string) interface{} { return s },
+		func(s string) interface{} { return errors.New(s) },
 		func(s string) interface{} { return stringData(s) },
 		func(s string) interface{} { return stringStringer(s) },
 		func(s string) interface{} { return stringMarshaler(s) },
@@ -137,9 +142,8 @@ func TestWriteValueStrings(t *testing.T) {
 	for _, g := range keygen {
 		for _, d := range data {
 			w := &bytes.Buffer{}
-			enc := NewEncoder(w)
 			value := g(d.value)
-			err := enc.writeValue(value)
+			err := writeValue(w, value)
 			if err != d.err {
 				t.Errorf("%#v (%[1]T): got error: %v, want error: %v", value, err, d.err)
 			}
@@ -156,6 +160,8 @@ func TestWriteValueStrings(t *testing.T) {
 func TestWriteValue(t *testing.T) {
 	var (
 		nilPtr *int
+		one    = 1
+		ptr    = &one
 	)
 
 	data := []struct {
@@ -168,20 +174,21 @@ func TestWriteValue(t *testing.T) {
 		{value: (*stringStringer)(nil), want: "null"},
 		{value: (*stringMarshaler)(nil), want: "null"},
 		{value: (*stringerMarshaler)(nil), want: "null"},
+		{value: ptr, want: "1"},
 
-		{value: make(chan int), err: ErrUnsportedType},
-		{value: []int{}, err: ErrUnsportedType},
-		{value: map[int]int{}, err: ErrUnsportedType},
-		{value: [2]int{}, err: ErrUnsportedType},
-		{value: struct{}{}, err: ErrUnsportedType},
-		{value: fmt.Sprint, err: ErrUnsportedType},
+		{value: errorMarshaler{}, err: &MarshalerError{Type: reflect.TypeOf(errorMarshaler{}), Err: marshalError}},
+		{value: make(chan int), err: ErrUnsupportedValueType},
+		{value: []int{}, err: ErrUnsupportedValueType},
+		{value: map[int]int{}, err: ErrUnsupportedValueType},
+		{value: [2]int{}, err: ErrUnsupportedValueType},
+		{value: struct{}{}, err: ErrUnsupportedValueType},
+		{value: fmt.Sprint, err: ErrUnsupportedValueType},
 	}
 
 	for _, d := range data {
 		w := &bytes.Buffer{}
-		enc := NewEncoder(w)
-		err := enc.writeValue(d.value)
-		if err != d.err {
+		err := writeValue(w, d.value)
+		if !reflect.DeepEqual(err, d.err) {
 			t.Errorf("%#v: got error: %v, want error: %v", d.value, err, d.err)
 		}
 		if err != nil {
@@ -210,9 +217,17 @@ func (s stringMarshaler) MarshalText() ([]byte, error) {
 type stringerMarshaler string
 
 func (s stringerMarshaler) String() string {
-	return string(s)
+	return "String() called"
 }
 
 func (s stringerMarshaler) MarshalText() ([]byte, error) {
 	return []byte(s), nil
+}
+
+var marshalError = errors.New("marshal error")
+
+type errorMarshaler struct{}
+
+func (errorMarshaler) MarshalText() ([]byte, error) {
+	return nil, marshalError
 }

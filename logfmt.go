@@ -26,12 +26,15 @@ func MarshalKeyvals(keyvals ...interface{}) ([]byte, error) {
 	}
 	buf := &bytes.Buffer{}
 	enc := NewEncoder(buf)
-	var err error
 	for i := 0; i < len(keyvals); i += 2 {
-		if i+1 < len(keyvals) {
-			err = enc.EncodeKeyval(keyvals[i], keyvals[i+1])
-		} else {
-			err = enc.EncodeKeyval(keyvals[i], nil)
+		k, v := keyvals[i], keyvals[i+1]
+		err := enc.EncodeKeyval(k, v)
+		if err == ErrUnsupportedKeyType {
+			continue
+		}
+		if _, ok := err.(*MarshalerError); ok || err == ErrUnsupportedValueType {
+			v = err
+			err = enc.EncodeKeyval(k, v)
 		}
 		if err != nil {
 			return nil, err
@@ -43,6 +46,7 @@ func MarshalKeyvals(keyvals ...interface{}) ([]byte, error) {
 // An Encoder writes logfmt data to an output stream.
 type Encoder struct {
 	w       io.Writer
+	scratch bytes.Buffer
 	needSep bool
 }
 
@@ -54,11 +58,44 @@ func NewEncoder(w io.Writer) *Encoder {
 }
 
 var (
-	space    = []byte(" ")
-	equals   = []byte("=")
-	newline  = []byte("\n")
-	nilbytes = []byte("null")
+	space   = []byte(" ")
+	equals  = []byte("=")
+	newline = []byte("\n")
+	null    = []byte("null")
 )
+
+// EncodeKeyval writes the logfmt encoding of key and value to the stream. A
+// single space is written before the second and subsequent keys in a record.
+// Nothing is written if a non-nil error is returned.
+func (enc *Encoder) EncodeKeyval(key, value interface{}) error {
+	defer enc.scratch.Reset()
+	if enc.needSep {
+		if _, err := enc.scratch.Write(space); err != nil {
+			return err
+		}
+	}
+	if err := writeKey(&enc.scratch, key); err != nil {
+		return err
+	}
+	if _, err := enc.scratch.Write(equals); err != nil {
+		return err
+	}
+	if err := writeValue(&enc.scratch, value); err != nil {
+		return err
+	}
+	_, err := enc.w.Write(enc.scratch.Bytes())
+	enc.needSep = true
+	return err
+}
+
+type MarshalerError struct {
+	Type reflect.Type
+	Err  error
+}
+
+func (e *MarshalerError) Error() string {
+	return "error marshaling value of type " + e.Type.String() + ": " + e.Err.Error()
+}
 
 // ErrNilKey is returned by Marshal functions and Encoder methods if a key is
 // a nil interface or pointer value.
@@ -68,37 +105,22 @@ var ErrNilKey = errors.New("nil key")
 // contains an invalid character.
 var ErrInvalidKey = errors.New("invalid key")
 
-// ErrUnsportedType is returned by Marshal functions and Encoder methods if a
-// key or value has an unsupported type.
-var ErrUnsportedType = errors.New("unsupported type")
+// ErrUnsupportedType is returned by Encoder methods if a key has an
+// unsupported type.
+var ErrUnsupportedKeyType = errors.New("unsupported key type")
 
-// EncodeKeyval writes the logfmt encoding of key and value to the stream. A
-// single space is written before the second and subsequent keys in a record.
-func (enc *Encoder) EncodeKeyval(key, value interface{}) error {
-	if enc.needSep {
-		if _, err := enc.w.Write(space); err != nil {
-			return err
-		}
-	} else {
-		enc.needSep = true
-	}
-	if err := enc.writeKey(key); err != nil {
-		return err
-	}
-	if _, err := enc.w.Write(equals); err != nil {
-		return err
-	}
-	return enc.writeValue(value)
-}
+// ErrUnsupportedType is returned by Encoder methods if a value has an
+// unsupported type.
+var ErrUnsupportedValueType = errors.New("unsupported value type")
 
-func (enc *Encoder) writeKey(key interface{}) error {
+func writeKey(w io.Writer, key interface{}) error {
 	if key == nil {
 		return ErrNilKey
 	}
 
 	switch k := key.(type) {
 	case string:
-		return enc.writeStringKey(k)
+		return writeStringKey(w, k)
 	case encoding.TextMarshaler:
 		kb, err := safeMarshal(k)
 		if err != nil {
@@ -107,24 +129,25 @@ func (enc *Encoder) writeKey(key interface{}) error {
 		if kb == nil {
 			return ErrNilKey
 		}
-		return enc.writeBytesKey(kb)
+		return writeBytesKey(w, kb)
 	case fmt.Stringer:
 		ks, ok := safeString(k)
 		if !ok {
 			return ErrNilKey
 		}
-		return enc.writeStringKey(ks)
+		return writeStringKey(w, ks)
 	default:
 		rkey := reflect.ValueOf(key)
 		switch rkey.Kind() {
 		case reflect.Array, reflect.Chan, reflect.Func, reflect.Map, reflect.Slice, reflect.Struct:
-			return ErrUnsportedType
+			return ErrUnsupportedKeyType
 		case reflect.Ptr:
 			if rkey.IsNil() {
 				return ErrNilKey
 			}
+			return writeKey(w, rkey.Elem().Interface())
 		}
-		return enc.writeStringKey(fmt.Sprint(k))
+		return writeStringKey(w, fmt.Sprint(k))
 	}
 }
 
@@ -132,51 +155,55 @@ func invalidKeyRune(r rune) bool {
 	return r <= ' ' || r == '=' || r == '"'
 }
 
-func (enc *Encoder) writeStringKey(key string) error {
+func writeStringKey(w io.Writer, key string) error {
 	if len(key) == 0 || strings.IndexFunc(key, invalidKeyRune) != -1 {
 		return ErrInvalidKey
 	}
-	_, err := io.WriteString(enc.w, key)
+	_, err := io.WriteString(w, key)
 	return err
 }
 
-func (enc *Encoder) writeBytesKey(key []byte) error {
+func writeBytesKey(w io.Writer, key []byte) error {
 	if len(key) == 0 || bytes.IndexFunc(key, invalidKeyRune) != -1 {
 		return ErrInvalidKey
 	}
-	_, err := enc.w.Write(key)
+	_, err := w.Write(key)
 	return err
 }
 
-func (enc *Encoder) writeValue(value interface{}) error {
+func writeValue(w io.Writer, value interface{}) error {
 	switch v := value.(type) {
 	case nil:
-		return enc.writeBytesValue(nilbytes)
+		return writeBytesValue(w, null)
 	case string:
-		return enc.writeStringValue(v, true)
+		return writeStringValue(w, v, true)
 	case encoding.TextMarshaler:
 		vb, err := safeMarshal(v)
 		if err != nil {
 			return err
 		}
 		if vb == nil {
-			vb = nilbytes
+			vb = null
 		}
-		return enc.writeBytesValue(vb)
+		return writeBytesValue(w, vb)
+	case error:
+		se, ok := safeError(v)
+		return writeStringValue(w, se, ok)
 	case fmt.Stringer:
-		return enc.writeStringValue(safeString(v))
+		ss, ok := safeString(v)
+		return writeStringValue(w, ss, ok)
 	default:
 		rvalue := reflect.ValueOf(value)
 		switch rvalue.Kind() {
 		case reflect.Array, reflect.Chan, reflect.Func, reflect.Map, reflect.Slice, reflect.Struct:
-			return ErrUnsportedType
+			return ErrUnsupportedValueType
 		case reflect.Ptr:
 			if rvalue.IsNil() {
-				return enc.writeBytesValue(nilbytes)
+				return writeBytesValue(w, null)
 			}
+			return writeValue(w, rvalue.Elem().Interface())
 		}
-		vs := fmt.Sprint(v)
-		return enc.writeStringValue(vs, true)
+		return writeStringValue(w, fmt.Sprint(v), true)
 	}
 }
 
@@ -184,24 +211,24 @@ func needsQuotedValueRune(r rune) bool {
 	return r <= ' ' || r == '=' || r == '"'
 }
 
-func (enc *Encoder) writeStringValue(value string, ok bool) error {
+func writeStringValue(w io.Writer, value string, ok bool) error {
 	var err error
 	if ok && value == "null" {
-		_, err = io.WriteString(enc.w, `"null"`)
+		_, err = io.WriteString(w, `"null"`)
 	} else if strings.IndexFunc(value, needsQuotedValueRune) != -1 {
-		_, err = enc.writeQuotedString(value)
+		_, err = writeQuotedString(w, value)
 	} else {
-		_, err = io.WriteString(enc.w, value)
+		_, err = io.WriteString(w, value)
 	}
 	return err
 }
 
-func (enc *Encoder) writeBytesValue(value []byte) error {
+func writeBytesValue(w io.Writer, value []byte) error {
 	var err error
 	if bytes.IndexFunc(value, needsQuotedValueRune) >= 0 {
-		_, err = enc.writeQuotedBytes(value)
+		_, err = writeQuotedBytes(w, value)
 	} else {
-		_, err = enc.w.Write(value)
+		_, err = w.Write(value)
 	}
 	return err
 }
@@ -219,6 +246,20 @@ func (enc *Encoder) EndRecord() error {
 // Reset resets the encoder to the beginning of a new record.
 func (enc *Encoder) Reset() {
 	enc.needSep = false
+}
+
+func safeError(err error) (s string, ok bool) {
+	defer func() {
+		if panicVal := recover(); panicVal != nil {
+			if v := reflect.ValueOf(err); v.Kind() == reflect.Ptr && v.IsNil() {
+				s, ok = "null", false
+			} else {
+				panic(panicVal)
+			}
+		}
+	}()
+	s, ok = err.Error(), true
+	return
 }
 
 func safeString(str fmt.Stringer) (s string, ok bool) {
@@ -246,5 +287,11 @@ func safeMarshal(tm encoding.TextMarshaler) (b []byte, err error) {
 		}
 	}()
 	b, err = tm.MarshalText()
+	if err != nil {
+		return nil, &MarshalerError{
+			Type: reflect.TypeOf(tm),
+			Err:  err,
+		}
+	}
 	return
 }
