@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/go-logfmt/logfmt"
 )
@@ -100,6 +101,7 @@ func TestMarshalKeyvals(t *testing.T) {
 		{in: kv("k1", "v1", "k2", "v2"), want: []byte("k1=v1 k2=v2")},
 		{in: kv("k1", "v1", "k2", [2]int{}), want: []byte("k1=v1 k2=\"unsupported value type\"")},
 		{in: kv([2]int{}, "v1", "k2", "v2"), want: []byte("k2=v2")},
+		{in: kv("k", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC)), want: []byte("k=2009-11-10T23:00:00Z")},
 		{in: kv("k", errorMarshaler{}), want: []byte("k=\"error marshaling value of type logfmt_test.errorMarshaler: marshal error\"")},
 		{in: kv("k", decimalMarshaler{5, 9}), want: []byte("k=5.9")},
 		{in: kv("k", (*decimalMarshaler)(nil)), want: []byte("k=null")},
