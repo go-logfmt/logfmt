@@ -1,4 +1,4 @@
-[![GoDoc](https://godoc.org/gopkg.in/logfmt.v0?status.svg)](https://godoc.org/gopkg.in/logfmt.v0)
+[![GoDoc](https://godoc.org/gopkg.in/logfmt.v0?status.svg)](https://godoc.org/gopkg.in/logfmt.v0) [![Go Report Card](https://goreportcard.com/badge/go-logfmt/logfmt)](https://goreportcard.com/report/go-logfmt/logfmt)
 
 # logfmt
 
