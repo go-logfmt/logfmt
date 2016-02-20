@@ -132,17 +132,9 @@ func kv(keyvals ...interface{}) []interface{} {
 	return keyvals
 }
 
-type stringData string
-
 type structData struct {
 	A string `logfmt:"fieldA"`
 	B int
-}
-
-type stringMarshaler string
-
-func (s stringMarshaler) MarshalText() ([]byte, error) {
-	return []byte(s), nil
 }
 
 type nilMarshaler int
