@@ -88,6 +88,7 @@ func (enc *Encoder) EncodeKeyval(key, value interface{}) error {
 	return err
 }
 
+// MarshalerError represents an error encountered while marshaling a value.
 type MarshalerError struct {
 	Type reflect.Type
 	Err  error
@@ -105,11 +106,11 @@ var ErrNilKey = errors.New("nil key")
 // contains an invalid character.
 var ErrInvalidKey = errors.New("invalid key")
 
-// ErrUnsupportedType is returned by Encoder methods if a key has an
+// ErrUnsupportedKeyType is returned by Encoder methods if a key has an
 // unsupported type.
 var ErrUnsupportedKeyType = errors.New("unsupported key type")
 
-// ErrUnsupportedType is returned by Encoder methods if a value has an
+// ErrUnsupportedValueType is returned by Encoder methods if a value has an
 // unsupported type.
 var ErrUnsupportedValueType = errors.New("unsupported value type")
 
