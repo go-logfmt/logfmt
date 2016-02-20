@@ -224,10 +224,10 @@ func (s stringerMarshaler) MarshalText() ([]byte, error) {
 	return []byte(s), nil
 }
 
-var marshalError = errors.New("marshal error")
+var errMarshaling = errors.New("marshal error")
 
 type errorMarshaler struct{}
 
 func (errorMarshaler) MarshalText() ([]byte, error) {
-	return nil, marshalError
+	return nil, errMarshaling
 }
