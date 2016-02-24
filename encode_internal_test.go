@@ -87,7 +87,7 @@ func TestWriteKey(t *testing.T) {
 		{key: (*stringerMarshaler)(nil), err: ErrNilKey},
 		{key: ptr, want: "1"},
 
-		{key: errorMarshaler{}, err: &MarshalerError{Type: reflect.TypeOf(errorMarshaler{}), Err: marshalError}},
+		{key: errorMarshaler{}, err: &MarshalerError{Type: reflect.TypeOf(errorMarshaler{}), Err: errMarshaling}},
 		{key: make(chan int), err: ErrUnsupportedKeyType},
 		{key: []int{}, err: ErrUnsupportedKeyType},
 		{key: map[int]int{}, err: ErrUnsupportedKeyType},
@@ -176,7 +176,7 @@ func TestWriteValue(t *testing.T) {
 		{value: (*stringerMarshaler)(nil), want: "null"},
 		{value: ptr, want: "1"},
 
-		{value: errorMarshaler{}, err: &MarshalerError{Type: reflect.TypeOf(errorMarshaler{}), Err: marshalError}},
+		{value: errorMarshaler{}, err: &MarshalerError{Type: reflect.TypeOf(errorMarshaler{}), Err: errMarshaling}},
 		{value: make(chan int), err: ErrUnsupportedValueType},
 		{value: []int{}, err: ErrUnsupportedValueType},
 		{value: map[int]int{}, err: ErrUnsupportedValueType},
