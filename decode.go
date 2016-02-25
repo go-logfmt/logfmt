@@ -1,22 +1,23 @@
 package logfmt
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
 )
 
 type Decoder struct {
-	r     io.ByteScanner
+	r     *bufio.Reader
 	state stateFn
 	err   error
 }
 
-func NewDecoder(r io.ByteScanner) *Decoder {
+func NewDecoder(r io.Reader) *Decoder {
 	dec := &Decoder{
-		r:     r,
-		state: garbage,
+		r: bufio.NewReader(r),
 	}
+	dec.state = garbage
 	return dec
 }
 
@@ -49,16 +50,16 @@ func (dec *Decoder) DecodeKeyval() (key, value []byte, err error) {
 func (dec *Decoder) Token() (Token, error) {
 	var t Token
 	for dec.err == nil && dec.state != nil && t == nil {
-		dec.state, t, dec.err = dec.state(dec.r)
+		dec.state, t, dec.err = dec.state(dec)
 	}
 	return t, dec.err
 }
 
-type stateFn func(io.ByteScanner) (stateFn, Token, error)
+type stateFn func(*Decoder) (stateFn, Token, error)
 
-func garbage(r io.ByteScanner) (stateFn, Token, error) {
+func garbage(dec *Decoder) (stateFn, Token, error) {
 	for {
-		c, err := r.ReadByte()
+		c, err := dec.r.ReadByte()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -66,15 +67,15 @@ func garbage(r io.ByteScanner) (stateFn, Token, error) {
 		case c == '\n':
 			return garbage, EndOfRecord{}, nil
 		case c > ' ' && c != '"' && c != '=':
-			return key, nil, r.UnreadByte()
+			return key, nil, dec.r.UnreadByte()
 		}
 	}
 }
 
-func key(r io.ByteScanner) (stateFn, Token, error) {
+func key(dec *Decoder) (stateFn, Token, error) {
 	var k []byte
 	for {
-		c, err := r.ReadByte()
+		c, err := dec.r.ReadByte()
 		if err == io.EOF {
 			return nvalue, Key(k), nil
 		}
@@ -87,14 +88,14 @@ func key(r io.ByteScanner) (stateFn, Token, error) {
 		case c == '=':
 			return equal, Key(k), nil
 		default:
-			return nvalue, Key(k), r.UnreadByte()
+			return nvalue, Key(k), dec.r.UnreadByte()
 		}
 	}
 }
 
-func equal(r io.ByteScanner) (stateFn, Token, error) {
+func equal(dec *Decoder) (stateFn, Token, error) {
 	for {
-		c, err := r.ReadByte()
+		c, err := dec.r.ReadByte()
 		if err == io.EOF {
 			return nvalue, nil, nil
 		}
@@ -103,23 +104,23 @@ func equal(r io.ByteScanner) (stateFn, Token, error) {
 		}
 		switch {
 		case c > ' ' && c != '"' && c != '=':
-			return ivalue, nil, r.UnreadByte()
+			return ivalue, nil, dec.r.UnreadByte()
 		case c == '"':
-			return qvalue, nil, r.UnreadByte()
+			return qvalue, nil, dec.r.UnreadByte()
 		default:
-			return nvalue, nil, r.UnreadByte()
+			return nvalue, nil, dec.r.UnreadByte()
 		}
 	}
 }
 
-func nvalue(r io.ByteScanner) (stateFn, Token, error) {
+func nvalue(dec *Decoder) (stateFn, Token, error) {
 	return garbage, Value(nil), nil
 }
 
-func ivalue(r io.ByteScanner) (stateFn, Token, error) {
+func ivalue(dec *Decoder) (stateFn, Token, error) {
 	var v []byte
 	for {
-		c, err := r.ReadByte()
+		c, err := dec.r.ReadByte()
 		if err != nil {
 			return nil, Value(v), err
 		}
@@ -127,7 +128,7 @@ func ivalue(r io.ByteScanner) (stateFn, Token, error) {
 		case c > ' ' && c != '"' && c != '=':
 			v = append(v, c)
 		default:
-			return garbage, Value(v), r.UnreadByte()
+			return garbage, Value(v), dec.r.UnreadByte()
 		}
 	}
 }
@@ -137,11 +138,11 @@ var (
 	ErrInvalidQuotedValue = errors.New("invalid quoted value")
 )
 
-func qvalue(r io.ByteScanner) (stateFn, Token, error) {
+func qvalue(dec *Decoder) (stateFn, Token, error) {
 	var v []byte
 	hasEsc, esc := false, false
 	for {
-		c, err := r.ReadByte()
+		c, err := dec.r.ReadByte()
 		if err != nil {
 			return nil, nil, ErrUnterminatedValue
 		}
