@@ -7,180 +7,240 @@ import (
 	"io"
 )
 
+var (
+	ErrUnterminatedValue  = errors.New("unterminated quoted value")
+	ErrInvalidQuotedValue = errors.New("invalid quoted value")
+	EndOfRecord           = errors.New("end of record")
+)
+
 type Decoder struct {
-	r     *bufio.Reader
-	state stateFn
-	err   error
+	s          *bufio.Scanner
+	line       []byte
+	lineNum    int
+	pos        int
+	start, end int
+	state      stateFn
+	err        error
 }
 
 func NewDecoder(r io.Reader) *Decoder {
 	dec := &Decoder{
-		r: bufio.NewReader(r),
+		s: bufio.NewScanner(r),
 	}
-	dec.state = garbage
 	return dec
 }
 
-func (dec *Decoder) DecodeKeyval() (key, value []byte, err error) {
-	k, err := dec.Token()
-	if err != nil {
-		return nil, nil, err
+func (dec *Decoder) NextRecord() bool {
+	if dec.err == EndOfRecord {
+		dec.err = nil
+	} else if dec.err != nil {
+		return false
 	}
-	if _, ok := k.(EndOfRecord); ok {
-		return nil, nil, nil
+	if !dec.s.Scan() {
+		dec.err = dec.s.Err()
+		return false
 	}
-	kk, ok := k.(Key)
-	if !ok {
-		return nil, nil, fmt.Errorf("unexpected token, wanted %T, got %T", kk, k)
-	}
-	v, err := dec.Token()
-	if err != nil {
-		return nil, nil, err
-	}
-	vv, ok := v.(Value)
-	if !ok {
-		return nil, nil, fmt.Errorf("unexpected token, wanted %T, got %T", vv, v)
-	}
-	return kk, vv, nil
+	dec.lineNum++
+	dec.line = dec.s.Bytes()
+	dec.state = garbage
+	dec.pos = 0
+	return len(dec.line) > 0
 }
 
-// func (dec *Decoder) NextRecord() error {
+func (dec *Decoder) ScanKey() []byte {
+	return dec.scanTok(tokKey)
+}
+
+func (dec *Decoder) ScanValue() []byte {
+	return dec.scanTok(tokValue | tokQuotedValue)
+}
+
+func (dec *Decoder) Err() error {
+	return dec.err
+}
+
+func (dec *Decoder) scanTok(toks tokType) []byte {
+	var tt tokType
+	for dec.err == nil && dec.state != nil && tt&toks == 0 {
+		dec.state, tt, dec.err = dec.state(dec)
+		// fmt.Printf("%v: %v:%v:%v %q\n", tt, dec.start, dec.pos, len(dec.line), dec.token())
+	}
+	if tt&toks == 0 {
+		return nil
+	}
+	if tt != tokQuotedValue {
+		return dec.token()
+	}
+	t, ok := unquoteBytes(dec.token())
+	if !ok {
+		dec.err = ErrInvalidQuotedValue
+		return nil
+	}
+	return t
+}
+
+// func (dec *Decoder) DecodeValue() ([]byte, error) {
 // }
 
-func (dec *Decoder) Token() (Token, error) {
-	var t Token
-	for dec.err == nil && dec.state != nil && t == nil {
-		dec.state, t, dec.err = dec.state(dec)
+func (dec *Decoder) peek() byte {
+	return dec.line[dec.pos]
+}
+
+func (dec *Decoder) token() []byte {
+	if dec.start == dec.end {
+		return nil
 	}
-	return t, dec.err
+	return dec.line[dec.start:dec.end]
 }
 
-type stateFn func(*Decoder) (stateFn, Token, error)
-
-func garbage(dec *Decoder) (stateFn, Token, error) {
-	for {
-		c, err := dec.r.ReadByte()
-		if err != nil {
-			return nil, nil, err
-		}
-		switch {
-		case c == '\n':
-			return garbage, EndOfRecord{}, nil
-		case c > ' ' && c != '"' && c != '=':
-			return key, nil, dec.r.UnreadByte()
-		}
+func (dec *Decoder) skip() bool {
+	dec.pos++
+	if dec.pos >= len(dec.line) {
+		return false
 	}
+	return true
 }
 
-func key(dec *Decoder) (stateFn, Token, error) {
-	var k []byte
-	for {
-		c, err := dec.r.ReadByte()
-		if err == io.EOF {
-			return nvalue, Key(k), nil
-		}
-		if err != nil {
-			return nil, Key(k), err
-		}
-		switch {
-		case c > ' ' && c != '"' && c != '=':
-			k = append(k, c)
-		case c == '=':
-			return equal, Key(k), nil
-		default:
-			return nvalue, Key(k), dec.r.UnreadByte()
-		}
-	}
-}
+type tokType int
 
-func equal(dec *Decoder) (stateFn, Token, error) {
-	for {
-		c, err := dec.r.ReadByte()
-		if err == io.EOF {
-			return nvalue, nil, nil
-		}
-		if err != nil {
-			return nil, nil, err
-		}
-		switch {
-		case c > ' ' && c != '"' && c != '=':
-			return ivalue, nil, dec.r.UnreadByte()
-		case c == '"':
-			return qvalue, nil, dec.r.UnreadByte()
-		default:
-			return nvalue, nil, dec.r.UnreadByte()
-		}
-	}
-}
-
-func nvalue(dec *Decoder) (stateFn, Token, error) {
-	return garbage, Value(nil), nil
-}
-
-func ivalue(dec *Decoder) (stateFn, Token, error) {
-	var v []byte
-	for {
-		c, err := dec.r.ReadByte()
-		if err != nil {
-			return nil, Value(v), err
-		}
-		switch {
-		case c > ' ' && c != '"' && c != '=':
-			v = append(v, c)
-		default:
-			return garbage, Value(v), dec.r.UnreadByte()
-		}
-	}
-}
-
-var (
-	ErrUnterminatedValue  = errors.New("unterminated quoted value")
-	ErrInvalidQuotedValue = errors.New("invalid quoted value")
+const (
+	tokNone tokType = 1 << iota
+	tokKey
+	tokEqual
+	tokValue
+	tokQuotedValue
+	tokEOL
 )
 
-func qvalue(dec *Decoder) (stateFn, Token, error) {
-	var v []byte
-	hasEsc, esc := false, false
+type stateFn func(*Decoder) (stateFn, tokType, error)
+
+func garbage(dec *Decoder) (stateFn, tokType, error) {
 	for {
-		c, err := dec.r.ReadByte()
-		if err != nil {
-			return nil, nil, ErrUnterminatedValue
+		c := dec.peek()
+		if c > ' ' && c != '"' && c != '=' {
+			return key, tokNone, nil
 		}
-		switch {
-		case esc:
-			v = append(v, c)
-			esc = false
-		case c == '\\':
-			v = append(v, c)
-			hasEsc, esc = true, true
-		case c == '"':
-			v = append(v, c)
-			if len(v) == 1 {
-				break
-			}
-			if !hasEsc {
-				return garbage, Value(v[1 : len(v)-1]), nil
-			}
-			uq, ok := unquoteBytes(v)
-			if !ok {
-				return nil, nil, ErrInvalidQuotedValue
-			}
-			return garbage, Value(uq), nil
-		default:
-			v = append(v, c)
+		if !dec.skip() {
+			return eol, tokNone, nil
 		}
 	}
 }
 
-// Token holds a value of one of these types:
-//
-//    Key
-//    Value
-//    EndOfRecord
-type Token interface{}
+func eol(dec *Decoder) (stateFn, tokType, error) {
+	return eol, tokEOL, EndOfRecord
+}
 
-type Key []byte
+func key(dec *Decoder) (stateFn, tokType, error) {
+	dec.start = dec.pos
+	for {
+		switch c := dec.peek(); {
+		case c == '=':
+			dec.end = dec.pos
+			return equal, tokKey, nil
+		case c == '"':
+			return nil, tokNone, dec.unexpectedByte(c)
+		case c <= ' ':
+			dec.end = dec.pos
+			return nvalue, tokKey, nil
+		}
+		if !dec.skip() {
+			dec.end = dec.pos
+			return eol, tokKey, nil
+		}
+	}
+}
 
-type Value []byte
+func equal(dec *Decoder) (stateFn, tokType, error) {
+	dec.start = dec.pos
+	ok := dec.skip()
+	dec.end = dec.pos
+	if !ok {
+		return eol, tokEqual, nil
+	}
+	return value, tokEqual, nil
+}
 
-type EndOfRecord struct{}
+func value(dec *Decoder) (stateFn, tokType, error) {
+	for {
+		switch c := dec.peek(); {
+		case c == '"':
+			return qvalue, tokNone, nil
+		case c > ' ':
+			return ivalue, tokNone, nil
+		}
+		if !dec.skip() {
+			dec.start = dec.pos
+			dec.end = dec.pos
+			return eol, tokValue, nil
+		}
+	}
+}
+
+func nvalue(dec *Decoder) (stateFn, tokType, error) {
+	dec.start = dec.pos
+	dec.end = dec.pos
+	return garbage, tokValue, nil
+}
+
+func ivalue(dec *Decoder) (stateFn, tokType, error) {
+	dec.start = dec.pos
+	for {
+		switch c := dec.peek(); {
+		case c == '=' || c == '"':
+			return nil, tokNone, dec.unexpectedByte(c)
+		case c <= ' ':
+			dec.end = dec.pos
+			return garbage, tokValue, nil
+		}
+		if !dec.skip() {
+			dec.end = dec.pos
+			return eol, tokValue, nil
+		}
+	}
+}
+
+func qvalue(dec *Decoder) (stateFn, tokType, error) {
+	hasEsc, esc := false, false
+
+	dec.start = dec.pos
+	for {
+		if !dec.skip() {
+			return eol, tokNone, ErrUnterminatedValue
+		}
+		c := dec.peek()
+		switch {
+		case esc:
+			esc = false
+		case c == '\\':
+			hasEsc, esc = true, true
+		case c == '"':
+			if dec.pos-dec.start == 1 {
+				// opening quote
+				break
+			}
+			if hasEsc {
+				dec.end = dec.pos + 1
+				return garbage, tokQuotedValue, nil
+			}
+			dec.start++
+			dec.end = dec.pos
+			return garbage, tokValue, nil
+		}
+	}
+}
+
+func (dec *Decoder) unexpectedByte(c byte) error {
+	return &SyntaxError{
+		Msg:  fmt.Sprintf("unexpected %q", c),
+		Line: dec.lineNum,
+	}
+}
+
+type SyntaxError struct {
+	Msg  string
+	Line int
+}
+
+func (e *SyntaxError) Error() string {
+	return fmt.Sprintf("logfmt syntax error on line %d: %s", e.Line, e.Msg)
+}
