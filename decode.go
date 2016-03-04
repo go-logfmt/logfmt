@@ -42,9 +42,13 @@ func (dec *Decoder) NextRecord() bool {
 	}
 	dec.lineNum++
 	dec.line = dec.s.Bytes()
-	dec.state = garbage
+	if len(dec.line) > 0 {
+		dec.state = garbage
+	} else {
+		dec.state = eol
+	}
 	dec.pos = 0
-	return len(dec.line) > 0
+	return true
 }
 
 func (dec *Decoder) ScanKey() []byte {
@@ -63,7 +67,6 @@ func (dec *Decoder) scanTok(toks tokType) []byte {
 	var tt tokType
 	for dec.err == nil && dec.state != nil && tt&toks == 0 {
 		dec.state, tt, dec.err = dec.state(dec)
-		// fmt.Printf("%v: %v:%v:%v %q\n", tt, dec.start, dec.pos, len(dec.line), dec.token())
 	}
 	if tt&toks == 0 {
 		return nil
@@ -117,7 +120,10 @@ type stateFn func(*Decoder) (stateFn, tokType, error)
 func garbage(dec *Decoder) (stateFn, tokType, error) {
 	for {
 		c := dec.peek()
-		if c > ' ' && c != '"' && c != '=' {
+		switch {
+		case c == '=' || c == '"':
+			return garbage, tokNone, dec.unexpectedByte(c)
+		case c > ' ':
 			return key, tokNone, nil
 		}
 		if !dec.skip() {
@@ -200,8 +206,6 @@ func ivalue(dec *Decoder) (stateFn, tokType, error) {
 }
 
 func qvalue(dec *Decoder) (stateFn, tokType, error) {
-	hasEsc, esc := false, false
-
 	dec.start = dec.pos
 	for {
 		if !dec.skip() {
@@ -209,22 +213,38 @@ func qvalue(dec *Decoder) (stateFn, tokType, error) {
 		}
 		c := dec.peek()
 		switch {
+		case c == '\\':
+			return qvalueEsc, tokNone, nil
+		case c == '"':
+			dec.start++
+			dec.end = dec.pos
+			if !dec.skip() {
+				return eol, tokValue, nil
+			}
+			return garbage, tokValue, nil
+		}
+	}
+}
+
+func qvalueEsc(dec *Decoder) (stateFn, tokType, error) {
+	var esc bool
+	for {
+		c := dec.peek()
+		switch {
 		case esc:
 			esc = false
 		case c == '\\':
-			hasEsc, esc = true, true
+			esc = true
 		case c == '"':
-			if dec.pos-dec.start == 1 {
-				// opening quote
-				break
-			}
-			if hasEsc {
-				dec.end = dec.pos + 1
-				return garbage, tokQuotedValue, nil
-			}
-			dec.start++
+			ok := dec.skip()
 			dec.end = dec.pos
-			return garbage, tokValue, nil
+			if !ok {
+				return eol, tokQuotedValue, nil
+			}
+			return garbage, tokQuotedValue, nil
+		}
+		if !dec.skip() {
+			return eol, tokNone, ErrUnterminatedValue
 		}
 	}
 }
@@ -233,14 +253,16 @@ func (dec *Decoder) unexpectedByte(c byte) error {
 	return &SyntaxError{
 		Msg:  fmt.Sprintf("unexpected %q", c),
 		Line: dec.lineNum,
+		Pos:  dec.pos + 1,
 	}
 }
 
 type SyntaxError struct {
 	Msg  string
 	Line int
+	Pos  int
 }
 
 func (e *SyntaxError) Error() string {
-	return fmt.Sprintf("logfmt syntax error on line %d: %s", e.Line, e.Msg)
+	return fmt.Sprintf("logfmt syntax error at pos %d on line %d: %s", e.Pos, e.Line, e.Msg)
 }

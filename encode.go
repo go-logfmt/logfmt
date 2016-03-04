@@ -122,6 +122,11 @@ func writeKey(w io.Writer, key interface{}) error {
 	switch k := key.(type) {
 	case string:
 		return writeStringKey(w, k)
+	case []byte:
+		if k == nil {
+			return ErrNilKey
+		}
+		return writeBytesKey(w, k)
 	case encoding.TextMarshaler:
 		kb, err := safeMarshal(k)
 		if err != nil {
@@ -178,6 +183,8 @@ func writeValue(w io.Writer, value interface{}) error {
 		return writeBytesValue(w, null)
 	case string:
 		return writeStringValue(w, v, true)
+	case []byte:
+		return writeBytesValue(w, v)
 	case encoding.TextMarshaler:
 		vb, err := safeMarshal(v)
 		if err != nil {
