@@ -58,6 +58,14 @@ func TestDecoder_scan(t *testing.T) {
 			},
 		},
 		{
+			"y= d y=g",
+			[][]kv{{
+				{[]byte("y"), nil},
+				{[]byte("d"), nil},
+				{[]byte("y"), []byte("g")},
+			}},
+		},
+		{
 			"y=\"f\"\ny=g",
 			[][]kv{
 				{{[]byte("y"), []byte("f")}},

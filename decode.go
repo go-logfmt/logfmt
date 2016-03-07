@@ -52,18 +52,18 @@ func (dec *Decoder) NextRecord() bool {
 }
 
 func (dec *Decoder) ScanKey() []byte {
-	return dec.scanTok(tokKey)
+	var tt tokType
+	for dec.err == nil && dec.state != nil && tt != tokKey {
+		dec.state, tt, dec.err = dec.state(dec)
+	}
+	if tt != tokKey {
+		return nil
+	}
+	return dec.token()
 }
 
 func (dec *Decoder) ScanValue() []byte {
-	return dec.scanTok(tokValue | tokQuotedValue)
-}
-
-func (dec *Decoder) Err() error {
-	return dec.err
-}
-
-func (dec *Decoder) scanTok(toks tokType) []byte {
+	const toks = tokValue | tokQuotedValue
 	var tt tokType
 	for dec.err == nil && dec.state != nil && tt&toks == 0 {
 		dec.state, tt, dec.err = dec.state(dec)
@@ -80,6 +80,10 @@ func (dec *Decoder) scanTok(toks tokType) []byte {
 		return nil
 	}
 	return t
+}
+
+func (dec *Decoder) Err() error {
+	return dec.err
 }
 
 // func (dec *Decoder) DecodeValue() ([]byte, error) {
@@ -122,12 +126,12 @@ func garbage(dec *Decoder) (stateFn, tokType, error) {
 		c := dec.peek()
 		switch {
 		case c == '=' || c == '"':
-			return garbage, tokNone, dec.unexpectedByte(c)
+			return nil, tokNone, dec.unexpectedByte(c)
 		case c > ' ':
-			return key, tokNone, nil
+			return key(dec)
 		}
 		if !dec.skip() {
-			return eol, tokNone, nil
+			return eol(dec)
 		}
 	}
 }
@@ -161,25 +165,18 @@ func equal(dec *Decoder) (stateFn, tokType, error) {
 	ok := dec.skip()
 	dec.end = dec.pos
 	if !ok {
-		return eol, tokEqual, nil
+		return eol(dec)
 	}
-	return value, tokEqual, nil
-}
 
-func value(dec *Decoder) (stateFn, tokType, error) {
-	for {
-		switch c := dec.peek(); {
-		case c == '"':
-			return qvalue, tokNone, nil
-		case c > ' ':
-			return ivalue, tokNone, nil
-		}
-		if !dec.skip() {
-			dec.start = dec.pos
-			dec.end = dec.pos
-			return eol, tokValue, nil
-		}
+	switch c := dec.peek(); {
+	case c == '"':
+		return qvalue(dec)
+	case c > ' ':
+		return ivalue(dec)
 	}
+	dec.start = dec.pos
+	dec.end = dec.pos
+	return garbage, tokValue, nil
 }
 
 func nvalue(dec *Decoder) (stateFn, tokType, error) {
@@ -214,7 +211,7 @@ func qvalue(dec *Decoder) (stateFn, tokType, error) {
 		c := dec.peek()
 		switch {
 		case c == '\\':
-			return qvalueEsc, tokNone, nil
+			return qvalueEsc(dec)
 		case c == '"':
 			dec.start++
 			dec.end = dec.pos
