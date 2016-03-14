@@ -15,19 +15,17 @@ type kv struct {
 func parse(data []byte) ([][]kv, error) {
 	var got [][]kv
 	dec := NewDecoder(bytes.NewReader(data))
-	for dec.NextRecord() {
+	for dec.ScanRecord() {
 		var kvs []kv
-		for dec.Err() == nil {
-			k := dec.ScanKey()
-			v := dec.ScanValue()
-			if k != nil {
+		for dec.ScanKeyval() {
+			k := dec.Key()
+			v := dec.Value()
+			if dec.Key() != nil {
 				kvs = append(kvs, kv{k, v})
 			}
 		}
-		if err := dec.Err(); err == EndOfRecord {
-			got = append(got, kvs)
-			kvs = nil
-		}
+		got = append(got, kvs)
+		kvs = nil
 	}
 	return got, dec.Err()
 }
