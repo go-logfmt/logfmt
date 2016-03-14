@@ -13,6 +13,7 @@ var (
 	EndOfRecord           = errors.New("end of record")
 )
 
+// A Decoder reads and decodes logfmt records from an input stream.
 type Decoder struct {
 	s          *bufio.Scanner
 	line       []byte
@@ -23,6 +24,10 @@ type Decoder struct {
 	err        error
 }
 
+// NewDecoder returns a new decoder that reads from r.
+//
+// The decoder introduces its own buffering and may read data from r beyond
+// the logfmt records requested.
 func NewDecoder(r io.Reader) *Decoder {
 	dec := &Decoder{
 		s: bufio.NewScanner(r),
@@ -30,6 +35,12 @@ func NewDecoder(r io.Reader) *Decoder {
 	return dec
 }
 
+// NextRecord advances the Decoder to the next record, which can then be
+// parsed with the ScanKey and ScanValue methods. It returns false when
+// decoding stops, either by reaching the end of the input or an error. After
+// NextRecord returns false, the Err method will return any error that
+// occurred during decoding, except that if it was io.EOF, Err will return
+// nil.
 func (dec *Decoder) NextRecord() bool {
 	if dec.err == EndOfRecord {
 		dec.err = nil
