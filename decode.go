@@ -7,11 +7,9 @@ import (
 	"io"
 )
 
-var (
-	ErrUnterminatedValue  = errors.New("unterminated quoted value")
-	ErrInvalidQuotedValue = errors.New("invalid quoted value")
-	EndOfRecord           = errors.New("end of record")
-)
+// EndOfRecord indicates that no more keys or values exist to decode in the
+// current record. Use Decoder.NextRecord to advance to the next record.
+var EndOfRecord = errors.New("end of record")
 
 // A Decoder reads and decodes logfmt records from an input stream.
 type Decoder struct {
@@ -87,7 +85,7 @@ func (dec *Decoder) ScanValue() []byte {
 	}
 	t, ok := unquoteBytes(dec.token())
 	if !ok {
-		dec.err = ErrInvalidQuotedValue
+		dec.err = dec.syntaxError("invalid quoted value")
 		return nil
 	}
 	return t
@@ -217,7 +215,7 @@ func qvalue(dec *Decoder) (stateFn, tokType, error) {
 	dec.start = dec.pos
 	for {
 		if !dec.skip() {
-			return eol, tokNone, ErrUnterminatedValue
+			return eol, tokNone, dec.syntaxError("unterminated quoted value")
 		}
 		c := dec.peek()
 		switch {
@@ -252,8 +250,16 @@ func qvalueEsc(dec *Decoder) (stateFn, tokType, error) {
 			return garbage, tokQuotedValue, nil
 		}
 		if !dec.skip() {
-			return eol, tokNone, ErrUnterminatedValue
+			return eol, tokNone, dec.syntaxError("unterminated quoted value")
 		}
+	}
+}
+
+func (dec *Decoder) syntaxError(msg string) error {
+	return &SyntaxError{
+		Msg:  msg,
+		Line: dec.lineNum,
+		Pos:  dec.pos + 1,
 	}
 }
 

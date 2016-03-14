@@ -155,15 +155,27 @@ func TestDecoder_errors(t *testing.T) {
 		},
 		{
 			"a=\"1",
-			ErrUnterminatedValue,
+			&SyntaxError{
+				Msg:  "unterminated quoted value",
+				Line: 1,
+				Pos:  5,
+			},
 		},
 		{
 			"a=\"\\t1",
-			ErrUnterminatedValue,
+			&SyntaxError{
+				Msg:  "unterminated quoted value",
+				Line: 1,
+				Pos:  7,
+			},
 		},
 		{
 			"a=\"\\u1\"",
-			ErrInvalidQuotedValue,
+			&SyntaxError{
+				Msg:  "invalid quoted value",
+				Line: 1,
+				Pos:  8,
+			},
 		},
 	}
 
