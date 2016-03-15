@@ -143,6 +143,14 @@ func TestDecoder_errors(t *testing.T) {
 			},
 		},
 		{
+			"a=1\nk=b =ar",
+			&SyntaxError{
+				Msg:  "unexpected '='",
+				Line: 2,
+				Pos:  5,
+			},
+		},
+		{
 			"a=1\nk=b=ar",
 			&SyntaxError{
 				Msg:  "unexpected '='",
@@ -156,6 +164,14 @@ func TestDecoder_errors(t *testing.T) {
 				Msg:  "unterminated quoted value",
 				Line: 1,
 				Pos:  5,
+			},
+		},
+		{
+			"a=\"1\\",
+			&SyntaxError{
+				Msg:  "unterminated quoted value",
+				Line: 1,
+				Pos:  6,
 			},
 		},
 		{
