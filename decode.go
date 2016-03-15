@@ -58,23 +58,23 @@ func (dec *Decoder) ScanKeyval() bool {
 	}
 
 	line := dec.s.Bytes()
-	if dec.pos >= len(line) {
-		return false
-	}
 
 	// garbage
-	for line[dec.pos] <= ' ' {
-		dec.pos++
-		if dec.pos >= len(line) {
-			return false
+	for p, c := range line[dec.pos:] {
+		if c > ' ' {
+			dec.pos += p
+			goto key
 		}
 	}
+	dec.pos = len(line)
+	return false
 
+key:
 	start := dec.pos
-	// key
-	for {
-		switch c := line[dec.pos]; {
+	for p, c := range line[dec.pos:] {
+		switch {
 		case c == '=':
+			dec.pos += p
 			if dec.pos > start {
 				dec.key = line[start:dec.pos]
 			}
@@ -84,22 +84,22 @@ func (dec *Decoder) ScanKeyval() bool {
 			}
 			goto equal
 		case c == '"':
+			dec.pos += p
 			dec.unexpectedByte(c)
 			return false
 		case c <= ' ':
-			if dec.pos > start {
-				dec.key = line[start:dec.pos]
-			}
-			return true
-		}
-		dec.pos++
-		if dec.pos >= len(line) {
+			dec.pos += p
 			if dec.pos > start {
 				dec.key = line[start:dec.pos]
 			}
 			return true
 		}
 	}
+	dec.pos = len(line)
+	if dec.pos > start {
+		dec.key = line[start:dec.pos]
+	}
+	return true
 
 equal:
 	dec.pos++
@@ -115,25 +115,25 @@ equal:
 
 	// value
 	start = dec.pos
-	for {
-		switch c := line[dec.pos]; {
+	for p, c := range line[dec.pos:] {
+		switch {
 		case c == '=' || c == '"':
+			dec.pos += p
 			dec.unexpectedByte(c)
 			return false
 		case c <= ' ':
-			if dec.pos > start {
-				dec.value = line[start:dec.pos]
-			}
-			return true
-		}
-		dec.pos++
-		if dec.pos >= len(line) {
+			dec.pos += p
 			if dec.pos > start {
 				dec.value = line[start:dec.pos]
 			}
 			return true
 		}
 	}
+	dec.pos = len(line)
+	if dec.pos > start {
+		dec.value = line[start:dec.pos]
+	}
+	return true
 
 qvalue:
 	const (
@@ -141,25 +141,17 @@ qvalue:
 		invalidQuote = "invalid quoted value"
 	)
 
-	hasEsc := false
+	hasEsc, esc := false, false
 	start = dec.pos
-	for {
-		dec.pos++
-		if dec.pos >= len(line) {
-			dec.syntaxError(untermQuote)
-			return false
-		}
-		switch line[dec.pos] {
-		case '\\':
-			hasEsc = true
-			dec.pos++
-			if dec.pos >= len(line) {
-				dec.syntaxError(untermQuote)
-				return false
-			}
-		case '"':
+	for p, c := range line[dec.pos+1:] {
+		switch {
+		case esc:
+			esc = false
+		case c == '\\':
+			hasEsc, esc = true, true
+		case c == '"':
+			dec.pos += p + 2
 			if hasEsc {
-				dec.pos++
 				v, ok := unquoteBytes(line[start:dec.pos])
 				if !ok {
 					dec.syntaxError(invalidQuote)
@@ -168,14 +160,17 @@ qvalue:
 				dec.value = v
 			} else {
 				start++
-				if dec.pos > start {
-					dec.value = line[start:dec.pos]
+				end := dec.pos - 1
+				if end > start {
+					dec.value = line[start:end]
 				}
-				dec.pos++
 			}
 			return true
 		}
 	}
+	dec.pos = len(line)
+	dec.syntaxError(untermQuote)
+	return false
 }
 
 func (dec *Decoder) Key() []byte {
