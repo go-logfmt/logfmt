@@ -13,15 +13,14 @@ var EndOfRecord = errors.New("end of record")
 
 // A Decoder reads and decodes logfmt records from an input stream.
 type Decoder struct {
-	s          *bufio.Scanner
-	line       []byte
-	key        []byte
-	value      []byte
-	lineNum    int
-	pos        int
-	start, end int
-	state      stateFn
-	err        error
+	s       *bufio.Scanner
+	line    []byte
+	key     []byte
+	value   []byte
+	lineNum int
+	pos     int
+	start   int
+	err     error
 }
 
 // NewDecoder returns a new decoder that reads from r.
@@ -51,22 +50,124 @@ func (dec *Decoder) ScanRecord() bool {
 	}
 	dec.lineNum++
 	dec.line = dec.s.Bytes()
-	if len(dec.line) > 0 {
-		dec.state = garbage
-	} else {
-		dec.state = eol
-	}
 	dec.pos = 0
 	return true
 }
 
 func (dec *Decoder) ScanKeyval() bool {
-	dec.key = dec.scanKey()
-	if dec.key == nil {
+	dec.key, dec.value = nil, nil
+	if dec.err != nil || dec.isEol() {
 		return false
 	}
-	dec.value = dec.scanValue()
+
+	// garbage
+	for {
+		c := dec.peek()
+		switch {
+		case c == '=' || c == '"':
+			dec.unexpectedByte(c)
+			return false
+		case c > ' ':
+			goto key
+		}
+		if !dec.skip() {
+			return false
+		}
+	}
+
+key:
+	dec.start = dec.pos
+	for {
+		switch c := dec.peek(); {
+		case c == '=':
+			dec.key = dec.token(dec.pos)
+			goto equal
+		case c == '"':
+			dec.unexpectedByte(c)
+			return false
+		case c <= ' ':
+			dec.key = dec.token(dec.pos)
+			return true
+		}
+		if !dec.skip() {
+			dec.key = dec.token(dec.pos)
+			return true
+		}
+	}
+
+equal:
+	ok := dec.skip()
+	if !ok {
+		return true
+	}
+	switch c := dec.peek(); {
+	case c == '"':
+		goto qvalue
+	case c > ' ':
+		goto ivalue
+	}
 	return true
+
+ivalue:
+	dec.start = dec.pos
+	for {
+		switch c := dec.peek(); {
+		case c == '=' || c == '"':
+			dec.unexpectedByte(c)
+			return false
+		case c <= ' ':
+			dec.value = dec.token(dec.pos)
+			return true
+		}
+		if !dec.skip() {
+			dec.value = dec.token(dec.pos)
+			return true
+		}
+	}
+
+qvalue:
+	dec.start = dec.pos
+	for {
+		if !dec.skip() {
+			dec.syntaxError("unterminated quoted value")
+			return false
+		}
+		c := dec.peek()
+		switch {
+		case c == '\\':
+			goto qvalueEsc
+		case c == '"':
+			dec.start++
+			dec.value = dec.token(dec.pos)
+			dec.skip()
+			return true
+		}
+	}
+
+qvalueEsc:
+	var esc bool
+	for {
+		c := dec.peek()
+		switch {
+		case esc:
+			esc = false
+		case c == '\\':
+			esc = true
+		case c == '"':
+			dec.skip()
+			v, ok := unquoteBytes(dec.token(dec.pos))
+			if !ok {
+				dec.syntaxError("invalid quoted value")
+				return false
+			}
+			dec.value = v
+			return true
+		}
+		if !dec.skip() {
+			dec.syntaxError("unterminated quoted value")
+			return false
+		}
+	}
 }
 
 func (dec *Decoder) Key() []byte {
@@ -75,37 +176,6 @@ func (dec *Decoder) Key() []byte {
 
 func (dec *Decoder) Value() []byte {
 	return dec.value
-}
-
-func (dec *Decoder) scanKey() []byte {
-	var tt tokType
-	for tt&(tokKey|tokEOL|tokErr) == 0 {
-		tt = dec.state(dec)
-	}
-	if tt != tokKey {
-		return nil
-	}
-	return dec.token()
-}
-
-func (dec *Decoder) scanValue() []byte {
-	const toks = tokValue | tokQuotedValue
-	var tt tokType
-	for tt&(toks|tokEOL|tokErr) == 0 {
-		tt = dec.state(dec)
-	}
-	if tt&toks == 0 {
-		return nil
-	}
-	if tt != tokQuotedValue {
-		return dec.token()
-	}
-	t, ok := unquoteBytes(dec.token())
-	if !ok {
-		dec.syntaxError("invalid quoted value")
-		return nil
-	}
-	return t
 }
 
 func (dec *Decoder) Err() error {
@@ -119,200 +189,39 @@ func (dec *Decoder) peek() byte {
 	return dec.line[dec.pos]
 }
 
-func (dec *Decoder) token() []byte {
-	if dec.start == dec.end {
+func (dec *Decoder) token(end int) []byte {
+	if dec.start == end {
 		return nil
 	}
-	return dec.line[dec.start:dec.end]
+	return dec.line[dec.start:end]
+}
+
+func (dec *Decoder) isEol() bool {
+	return dec.pos >= len(dec.line)
 }
 
 func (dec *Decoder) skip() bool {
 	dec.pos++
-	if dec.pos >= len(dec.line) {
+	if dec.isEol() {
 		return false
 	}
 	return true
 }
 
-type tokType int
-
-const (
-	tokNone tokType = 1 << iota
-	tokKey
-	tokEqual
-	tokValue
-	tokQuotedValue
-	tokEOL
-	tokErr
-)
-
-type stateFn func(*Decoder) tokType
-
-func garbage(dec *Decoder) tokType {
-	for {
-		c := dec.peek()
-		switch {
-		case c == '=' || c == '"':
-			return dec.unexpectedByte(c)
-		case c > ' ':
-			dec.state = key
-			return tokNone
-		}
-		if !dec.skip() {
-			dec.state = eol
-			return tokNone
-		}
-	}
-}
-
-func err(dec *Decoder) tokType {
-	return tokErr
-}
-
-func eol(dec *Decoder) tokType {
-	return tokEOL
-}
-
-func key(dec *Decoder) tokType {
-	dec.start = dec.pos
-	for {
-		switch c := dec.peek(); {
-		case c == '=':
-			dec.end = dec.pos
-			dec.state = equal
-			return tokKey
-		case c == '"':
-			return dec.unexpectedByte(c)
-		case c <= ' ':
-			dec.end = dec.pos
-			dec.state = nvalue
-			return tokKey
-		}
-		if !dec.skip() {
-			dec.end = dec.pos
-			dec.state = eol
-			return tokKey
-		}
-	}
-}
-
-func equal(dec *Decoder) tokType {
-	dec.start = dec.pos
-	ok := dec.skip()
-	dec.end = dec.pos
-	if !ok {
-		dec.state = eol
-		return tokNone
-	}
-
-	switch c := dec.peek(); {
-	case c == '"':
-		dec.state = qvalue
-		return tokNone
-	case c > ' ':
-		dec.state = ivalue
-		return tokNone
-	}
-	dec.start = dec.pos
-	dec.end = dec.pos
-	dec.state = garbage
-	return tokValue
-}
-
-func nvalue(dec *Decoder) tokType {
-	dec.start = dec.pos
-	dec.end = dec.pos
-	dec.state = garbage
-	return tokValue
-}
-
-func ivalue(dec *Decoder) tokType {
-	dec.start = dec.pos
-	for {
-		switch c := dec.peek(); {
-		case c == '=' || c == '"':
-			return dec.unexpectedByte(c)
-		case c <= ' ':
-			dec.end = dec.pos
-			dec.state = garbage
-			return tokValue
-		}
-		if !dec.skip() {
-			dec.end = dec.pos
-			dec.state = eol
-			return tokValue
-		}
-	}
-}
-
-func qvalue(dec *Decoder) tokType {
-	dec.start = dec.pos
-	for {
-		if !dec.skip() {
-			dec.syntaxError("unterminated quoted value")
-			return tokNone
-		}
-		c := dec.peek()
-		switch {
-		case c == '\\':
-			dec.state = qvalueEsc
-			return tokNone
-		case c == '"':
-			dec.start++
-			dec.end = dec.pos
-			if !dec.skip() {
-				dec.state = eol
-				return tokValue
-			}
-			dec.state = garbage
-			return tokValue
-		}
-	}
-}
-
-func qvalueEsc(dec *Decoder) tokType {
-	var esc bool
-	for {
-		c := dec.peek()
-		switch {
-		case esc:
-			esc = false
-		case c == '\\':
-			esc = true
-		case c == '"':
-			ok := dec.skip()
-			dec.end = dec.pos
-			if !ok {
-				dec.state = eol
-				return tokQuotedValue
-			}
-			dec.state = garbage
-			return tokQuotedValue
-		}
-		if !dec.skip() {
-			return dec.syntaxError("unterminated quoted value")
-		}
-	}
-}
-
-func (dec *Decoder) syntaxError(msg string) tokType {
-	dec.state = err
+func (dec *Decoder) syntaxError(msg string) {
 	dec.err = &SyntaxError{
 		Msg:  msg,
 		Line: dec.lineNum,
 		Pos:  dec.pos + 1,
 	}
-	return tokErr
 }
 
-func (dec *Decoder) unexpectedByte(c byte) tokType {
-	dec.state = err
+func (dec *Decoder) unexpectedByte(c byte) {
 	dec.err = &SyntaxError{
 		Msg:  fmt.Sprintf("unexpected %q", c),
 		Line: dec.lineNum,
 		Pos:  dec.pos + 1,
 	}
-	return tokErr
 }
 
 type SyntaxError struct {
