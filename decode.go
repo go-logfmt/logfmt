@@ -2,14 +2,9 @@ package logfmt
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 )
-
-// EndOfRecord indicates that no more keys or values exist to decode in the
-// current record. Use Decoder.ScanRecord to advance to the next record.
-var EndOfRecord = errors.New("end of record")
 
 // A Decoder reads and decodes logfmt records from an input stream.
 type Decoder struct {
