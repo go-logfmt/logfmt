@@ -13,13 +13,11 @@ var EndOfRecord = errors.New("end of record")
 
 // A Decoder reads and decodes logfmt records from an input stream.
 type Decoder struct {
-	s       *bufio.Scanner
-	line    []byte
+	pos     int
 	key     []byte
 	value   []byte
 	lineNum int
-	pos     int
-	start   int
+	s       *bufio.Scanner
 	err     error
 }
 
@@ -49,123 +47,133 @@ func (dec *Decoder) ScanRecord() bool {
 		return false
 	}
 	dec.lineNum++
-	dec.line = dec.s.Bytes()
 	dec.pos = 0
 	return true
 }
 
 func (dec *Decoder) ScanKeyval() bool {
 	dec.key, dec.value = nil, nil
-	if dec.err != nil || dec.isEol() {
+	if dec.err != nil {
+		return false
+	}
+
+	line := dec.s.Bytes()
+	if dec.pos >= len(line) {
 		return false
 	}
 
 	// garbage
-	for {
-		c := dec.peek()
-		switch {
-		case c == '=' || c == '"':
-			dec.unexpectedByte(c)
-			return false
-		case c > ' ':
-			goto key
-		}
-		if !dec.skip() {
+	for line[dec.pos] <= ' ' {
+		dec.pos++
+		if dec.pos >= len(line) {
 			return false
 		}
 	}
 
-key:
-	dec.start = dec.pos
+	start := dec.pos
+	// key
 	for {
-		switch c := dec.peek(); {
+		switch c := line[dec.pos]; {
 		case c == '=':
-			dec.key = dec.token(dec.pos)
+			if dec.pos > start {
+				dec.key = line[start:dec.pos]
+			}
+			if dec.key == nil {
+				dec.unexpectedByte(c)
+				return false
+			}
 			goto equal
 		case c == '"':
 			dec.unexpectedByte(c)
 			return false
 		case c <= ' ':
-			dec.key = dec.token(dec.pos)
+			if dec.pos > start {
+				dec.key = line[start:dec.pos]
+			}
 			return true
 		}
-		if !dec.skip() {
-			dec.key = dec.token(dec.pos)
+		dec.pos++
+		if dec.pos >= len(line) {
+			if dec.pos > start {
+				dec.key = line[start:dec.pos]
+			}
 			return true
 		}
 	}
 
 equal:
-	ok := dec.skip()
-	if !ok {
+	dec.pos++
+	if dec.pos >= len(line) {
 		return true
 	}
-	switch c := dec.peek(); {
+	switch c := line[dec.pos]; {
+	case c <= ' ':
+		return true
 	case c == '"':
 		goto qvalue
-	case c > ' ':
-		goto ivalue
 	}
-	return true
 
-ivalue:
-	dec.start = dec.pos
+	// value
+	start = dec.pos
 	for {
-		switch c := dec.peek(); {
+		switch c := line[dec.pos]; {
 		case c == '=' || c == '"':
 			dec.unexpectedByte(c)
 			return false
 		case c <= ' ':
-			dec.value = dec.token(dec.pos)
+			if dec.pos > start {
+				dec.value = line[start:dec.pos]
+			}
 			return true
 		}
-		if !dec.skip() {
-			dec.value = dec.token(dec.pos)
+		dec.pos++
+		if dec.pos >= len(line) {
+			if dec.pos > start {
+				dec.value = line[start:dec.pos]
+			}
 			return true
 		}
 	}
 
 qvalue:
-	dec.start = dec.pos
+	const (
+		untermQuote  = "unterminated quoted value"
+		invalidQuote = "invalid quoted value"
+	)
+
+	hasEsc := false
+	start = dec.pos
 	for {
-		if !dec.skip() {
-			dec.syntaxError("unterminated quoted value")
+		dec.pos++
+		if dec.pos >= len(line) {
+			dec.syntaxError(untermQuote)
 			return false
 		}
-		c := dec.peek()
-		switch {
-		case c == '\\':
-			goto qvalueEsc
-		case c == '"':
-			dec.start++
-			dec.value = dec.token(dec.pos)
-			dec.skip()
-			return true
-		}
-	}
-
-qvalueEsc:
-	var esc bool
-	for {
-		c := dec.peek()
-		switch {
-		case esc:
-			esc = false
-		case c == '\\':
-			esc = true
-		case c == '"':
-			dec.skip()
-			v, ok := unquoteBytes(dec.token(dec.pos))
-			if !ok {
-				dec.syntaxError("invalid quoted value")
+		switch line[dec.pos] {
+		case '\\':
+			hasEsc = true
+			dec.pos++
+			if dec.pos >= len(line) {
+				dec.syntaxError(untermQuote)
 				return false
 			}
-			dec.value = v
+		case '"':
+			if hasEsc {
+				dec.pos++
+				v, ok := unquoteBytes(line[start:dec.pos])
+				if !ok {
+					dec.syntaxError(invalidQuote)
+					return false
+				}
+				dec.value = v
+			} else {
+				start++
+				if dec.pos > start {
+					dec.value = line[start:dec.pos]
+				}
+				dec.pos++
+			}
 			return true
-		}
-		if !dec.skip() {
-			dec.syntaxError("unterminated quoted value")
-			return false
 		}
 	}
 }
@@ -184,29 +192,6 @@ func (dec *Decoder) Err() error {
 
 // func (dec *Decoder) DecodeValue() ([]byte, error) {
 // }
-
-func (dec *Decoder) peek() byte {
-	return dec.line[dec.pos]
-}
-
-func (dec *Decoder) token(end int) []byte {
-	if dec.start == end {
-		return nil
-	}
-	return dec.line[dec.start:end]
-}
-
-func (dec *Decoder) isEol() bool {
-	return dec.pos >= len(dec.line)
-}
-
-func (dec *Decoder) skip() bool {
-	dec.pos++
-	if dec.isEol() {
-		return false
-	}
-	return true
-}
 
 func (dec *Decoder) syntaxError(msg string) {
 	dec.err = &SyntaxError{
