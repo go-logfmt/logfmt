@@ -28,11 +28,10 @@ func NewDecoder(r io.Reader) *Decoder {
 }
 
 // ScanRecord advances the Decoder to the next record, which can then be
-// parsed with the ScanKey and ScanValue methods. It returns false when
-// decoding stops, either by reaching the end of the input or an error. After
-// ScanRecord returns false, the Err method will return any error that
-// occurred during decoding, except that if it was io.EOF, Err will return
-// nil.
+// parsed with the ScanKeyval method. It returns false when decoding stops,
+// either by reaching the end of the input or an error. After ScanRecord
+// returns false, the Err method will return any error that occurred during
+// decoding, except that if it was io.EOF, Err will return nil.
 func (dec *Decoder) ScanRecord() bool {
 	if dec.err != nil {
 		return false
@@ -46,6 +45,10 @@ func (dec *Decoder) ScanRecord() bool {
 	return true
 }
 
+// ScanKeyval advances the Decoder to the next key/value pair of the current
+// record, which can then be retrieved with the Key and Value methods. It
+// returns false when decoding stops, either by reaching the end of the
+// current record or an error.
 func (dec *Decoder) ScanKeyval() bool {
 	dec.key, dec.value = nil, nil
 	if dec.err != nil {
@@ -168,20 +171,28 @@ qvalue:
 	return false
 }
 
+// Key returns the most recent key found by a call to ScanKeyval. The returned
+// slice may point to internal buffers and is only valid until the next call
+// to ScanRecord.  It does no allocation.
 func (dec *Decoder) Key() []byte {
 	return dec.key
 }
 
+// Value returns the most recent value found by a call to ScanKeyval. The
+// returned slice may point to internal buffers and is only valid until the
+// next call to ScanRecord.  It does no allocation when the value has no
+// escape sequences.
 func (dec *Decoder) Value() []byte {
 	return dec.value
 }
 
+// func (dec *Decoder) DecodeValue() ([]byte, error) {
+// }
+
+// Err returns the first non-EOF error that was encountered by the Scanner.
 func (dec *Decoder) Err() error {
 	return dec.err
 }
-
-// func (dec *Decoder) DecodeValue() ([]byte, error) {
-// }
 
 func (dec *Decoder) syntaxError(msg string) {
 	dec.err = &SyntaxError{
@@ -199,6 +210,7 @@ func (dec *Decoder) unexpectedByte(c byte) {
 	}
 }
 
+// A SyntaxError represents a syntax error in the logfmt input stream.
 type SyntaxError struct {
 	Msg  string
 	Line int
