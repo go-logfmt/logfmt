@@ -28,10 +28,7 @@ func TestDecoder_scan(t *testing.T) {
 		{`y`, [][]kv{{{[]byte("y"), nil}}}},
 		{`y=f`, [][]kv{{{[]byte("y"), []byte("f")}}}},
 		{"y=\"\\tf\"", [][]kv{{{[]byte("y"), []byte("\tf")}}}},
-		{
-			"a=1\n",
-			[][]kv{{{[]byte("a"), []byte("1")}}},
-		},
+		{"a=1\n", [][]kv{{{[]byte("a"), []byte("1")}}}},
 		{
 			`a=1 b="bar" ƒ=2h3s r="esc\t" d x=sf   `,
 			[][]kv{{
@@ -110,86 +107,17 @@ func TestDecoder_errors(t *testing.T) {
 		data string
 		want error
 	}{
-		{
-			"a=1\n=bar",
-			&SyntaxError{
-				Msg:  "unexpected '='",
-				Line: 2,
-				Pos:  1,
-			},
-		},
-		{
-			"a=1\n\"k\"=bar",
-			&SyntaxError{
-				Msg:  "unexpected '\"'",
-				Line: 2,
-				Pos:  1,
-			},
-		},
-		{
-			"a=1\nk\"ey=bar",
-			&SyntaxError{
-				Msg:  "unexpected '\"'",
-				Line: 2,
-				Pos:  2,
-			},
-		},
-		{
-			"a=1\nk=b\"ar",
-			&SyntaxError{
-				Msg:  "unexpected '\"'",
-				Line: 2,
-				Pos:  4,
-			},
-		},
-		{
-			"a=1\nk=b =ar",
-			&SyntaxError{
-				Msg:  "unexpected '='",
-				Line: 2,
-				Pos:  5,
-			},
-		},
-		{
-			"a=1\nk=b=ar",
-			&SyntaxError{
-				Msg:  "unexpected '='",
-				Line: 2,
-				Pos:  4,
-			},
-		},
-		{
-			"a=\"1",
-			&SyntaxError{
-				Msg:  "unterminated quoted value",
-				Line: 1,
-				Pos:  5,
-			},
-		},
-		{
-			"a=\"1\\",
-			&SyntaxError{
-				Msg:  "unterminated quoted value",
-				Line: 1,
-				Pos:  6,
-			},
-		},
-		{
-			"a=\"\\t1",
-			&SyntaxError{
-				Msg:  "unterminated quoted value",
-				Line: 1,
-				Pos:  7,
-			},
-		},
-		{
-			"a=\"\\u1\"",
-			&SyntaxError{
-				Msg:  "invalid quoted value",
-				Line: 1,
-				Pos:  8,
-			},
-		},
+		{"a=1\n=bar", &SyntaxError{Msg: "unexpected '='", Line: 2, Pos: 1}},
+		{"a=1\n\"k\"=bar", &SyntaxError{Msg: "unexpected '\"'", Line: 2, Pos: 1}},
+		{"a=1\nk\"ey=bar", &SyntaxError{Msg: "unexpected '\"'", Line: 2, Pos: 2}},
+		{"a=1\nk=b\"ar", &SyntaxError{Msg: "unexpected '\"'", Line: 2, Pos: 4}},
+		{"a=1\nk=b =ar", &SyntaxError{Msg: "unexpected '='", Line: 2, Pos: 5}},
+		{"a==", &SyntaxError{Msg: "unexpected '='", Line: 1, Pos: 3}},
+		{"a=1\nk=b=ar", &SyntaxError{Msg: "unexpected '='", Line: 2, Pos: 4}},
+		{"a=\"1", &SyntaxError{Msg: "unterminated quoted value", Line: 1, Pos: 5}},
+		{"a=\"1\\", &SyntaxError{Msg: "unterminated quoted value", Line: 1, Pos: 6}},
+		{"a=\"\\t1", &SyntaxError{Msg: "unterminated quoted value", Line: 1, Pos: 7}},
+		{"a=\"\\u1\"", &SyntaxError{Msg: "invalid quoted value", Line: 1, Pos: 8}},
 	}
 
 	for _, test := range tests {
