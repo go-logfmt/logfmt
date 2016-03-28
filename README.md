@@ -27,4 +27,4 @@ standard as a goal.
 
 ## Versioning
 
-Package logfmt publishes releases via [semver](http://semver.org/) compatible Git tags.
+Package logfmt publishes releases via [semver](http://semver.org/) compatible Git tags prefixed with a single 'v'.
