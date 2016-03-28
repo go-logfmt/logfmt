@@ -1,4 +1,4 @@
-[![GoDoc](https://godoc.org/gopkg.in/logfmt.v0?status.svg)](https://godoc.org/gopkg.in/logfmt.v0) [![Go Report Card](https://goreportcard.com/badge/go-logfmt/logfmt)](https://goreportcard.com/report/go-logfmt/logfmt)
+[![GoDoc](https://godoc.org/github.com/go-logfmt/logfmt?status.svg)](https://godoc.org/github.com/go-logfmt/logfmt) [![Go Report Card](https://goreportcard.com/badge/go-logfmt/logfmt)](https://goreportcard.com/report/go-logfmt/logfmt)
 
 # logfmt
 
@@ -27,7 +27,4 @@ standard as a goal.
 
 ## Versioning
 
-Package logfmt publishes stable APIs via gopkg.in. The API is not yet stable, so
-the current version is v0, which is imported like so:
-
-    import "gopkg.in/logfmt.v0"
+Package logfmt publishes releases via [semver](http://semver.org/) compatible Git tags.
