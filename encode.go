@@ -63,7 +63,7 @@ var (
 // single space is written before the second and subsequent keys in a record.
 // Nothing is written if a non-nil error is returned.
 func (enc *Encoder) EncodeKeyval(key, value interface{}) error {
-	defer enc.scratch.Reset()
+	enc.scratch.Reset()
 	if enc.needSep {
 		if _, err := enc.scratch.Write(space); err != nil {
 			return err

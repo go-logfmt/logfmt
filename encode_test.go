@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"reflect"
 	"testing"
 	"time"
@@ -186,4 +187,13 @@ type errorMarshaler struct{}
 
 func (errorMarshaler) MarshalText() ([]byte, error) {
 	return nil, marshalError
+}
+
+func BenchmarkEncodeKeyval(b *testing.B) {
+	b.ReportAllocs()
+	enc := logfmt.NewEncoder(ioutil.Discard)
+	for i := 0; i < b.N; i++ {
+		enc.EncodeKeyval("sk", "10")
+		enc.EncodeKeyval("some-key", "a rather long string with spaces")
+	}
 }
