@@ -13,27 +13,9 @@ import (
 // MarshalKeyvals returns the logfmt encoding of keyvals, a variadic sequence
 // of alternating keys and values.
 func MarshalKeyvals(keyvals ...interface{}) ([]byte, error) {
-	if len(keyvals) == 0 {
-		return nil, nil
-	}
-	if len(keyvals)%2 == 1 {
-		keyvals = append(keyvals, nil)
-	}
 	buf := &bytes.Buffer{}
-	enc := NewEncoder(buf)
-	for i := 0; i < len(keyvals); i += 2 {
-		k, v := keyvals[i], keyvals[i+1]
-		err := enc.EncodeKeyval(k, v)
-		if err == ErrUnsupportedKeyType {
-			continue
-		}
-		if _, ok := err.(*MarshalerError); ok || err == ErrUnsupportedValueType {
-			v = err
-			err = enc.EncodeKeyval(k, v)
-		}
-		if err != nil {
-			return nil, err
-		}
+	if err := NewEncoder(buf).EncodeKeyvals(keyvals...); err != nil {
+		return nil, err
 	}
 	return buf.Bytes(), nil
 }
@@ -81,6 +63,36 @@ func (enc *Encoder) EncodeKeyval(key, value interface{}) error {
 	_, err := enc.w.Write(enc.scratch.Bytes())
 	enc.needSep = true
 	return err
+}
+
+// EncodeKeyvals writes the logfmt encoding of keyvals to the stream. Keyvals
+// is a variadic sequence of alternating keys and values. Keys of unsupported
+// type are skipped along with their corresponding value. Values of
+// unsupported type or that cause a MarshalerError are replaced by their error
+// but do not cause EncodeKeyvals to return an error. If a non-nil error is
+// returned some key/value pairs may not have be written.
+func (enc *Encoder) EncodeKeyvals(keyvals ...interface{}) error {
+	if len(keyvals) == 0 {
+		return nil
+	}
+	if len(keyvals)%2 == 1 {
+		keyvals = append(keyvals, nil)
+	}
+	for i := 0; i < len(keyvals); i += 2 {
+		k, v := keyvals[i], keyvals[i+1]
+		err := enc.EncodeKeyval(k, v)
+		if err == ErrUnsupportedKeyType {
+			continue
+		}
+		if _, ok := err.(*MarshalerError); ok || err == ErrUnsupportedValueType {
+			v = err
+			err = enc.EncodeKeyval(k, v)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // MarshalerError represents an error encountered while marshaling a value.
