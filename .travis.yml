@@ -1,5 +1,5 @@
 language: go
-
+sudo: false
 go:
   - 1.2
   - 1.3
@@ -12,5 +12,8 @@ before_install:
   - go get github.com/mattn/goveralls
   - go get golang.org/x/tools/cmd/cover
 
+before_script:
+  - go get -v -t ./...
+
 script:
-  - $HOME/gopath/bin/goveralls -service=travis-ci
+  - goveralls -service=travis-ci
