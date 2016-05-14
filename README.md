@@ -1,4 +1,7 @@
-[![GoDoc](https://godoc.org/github.com/go-logfmt/logfmt?status.svg)](https://godoc.org/github.com/go-logfmt/logfmt) [![Go Report Card](https://goreportcard.com/badge/go-logfmt/logfmt)](https://goreportcard.com/report/go-logfmt/logfmt) [![TravisCI](https://travis-ci.org/go-logfmt/logfmt.svg?branch=master)](https://travis-ci.org/go-logfmt/logfmt)
+[![GoDoc](https://godoc.org/github.com/go-logfmt/logfmt?status.svg)](https://godoc.org/github.com/go-logfmt/logfmt)
+[![Go Report Card](https://goreportcard.com/badge/go-logfmt/logfmt)](https://goreportcard.com/report/go-logfmt/logfmt)
+[![TravisCI](https://travis-ci.org/go-logfmt/logfmt.svg?branch=master)](https://travis-ci.org/go-logfmt/logfmt)
+[![Coverage Status](https://coveralls.io/repos/github/go-logfmt/logfmt/badge.svg?branch=master)](https://coveralls.io/github/go-logfmt/logfmt?branch=master)
 
 # logfmt
 
