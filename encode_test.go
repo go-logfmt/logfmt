@@ -125,8 +125,8 @@ func TestMarshalKeyvals(t *testing.T) {
 		if err != d.err {
 			t.Errorf("%#v: got error: %v, want error: %v", d.in, err, d.err)
 		}
-		if got, want := got, d.want; !reflect.DeepEqual(got, want) {
-			t.Errorf("%#v: got '%s', want '%s'", d.in, got, want)
+		if !reflect.DeepEqual(got, d.want) {
+			t.Errorf("%#v: got '%s', want '%s'", d.in, got, d.want)
 		}
 	}
 }
@@ -181,12 +181,12 @@ func (t marshalerStringer) String() string {
 	return fmt.Sprint(t.a + t.b)
 }
 
-var marshalError = errors.New("marshal error")
+var errMarshal = errors.New("marshal error")
 
 type errorMarshaler struct{}
 
 func (errorMarshaler) MarshalText() ([]byte, error) {
-	return nil, marshalError
+	return nil, errMarshal
 }
 
 func BenchmarkEncodeKeyval(b *testing.B) {
