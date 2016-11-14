@@ -22,7 +22,7 @@ func Fuzz(data []byte) int {
 	if err = write(parsed, &w1); err != nil {
 		panic(err)
 	}
-	parsed, err = parse(data)
+	parsed, err = parse(w1.Bytes())
 	if err != nil {
 		panic(err)
 	}

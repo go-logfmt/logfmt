@@ -68,6 +68,8 @@ func (dec *Decoder) ScanKeyval() bool {
 	return false
 
 key:
+	const invalidKeyError = "invalid key"
+
 	start := dec.pos
 	for p, c := range line[dec.pos:] {
 		switch {
@@ -75,6 +77,10 @@ key:
 			dec.pos += p
 			if dec.pos > start {
 				dec.key = line[start:dec.pos]
+				if invalidKey(dec.key) {
+					dec.syntaxError(invalidKeyError)
+					return false
+				}
 			}
 			if dec.key == nil {
 				dec.unexpectedByte(c)
@@ -89,6 +95,10 @@ key:
 			dec.pos += p
 			if dec.pos > start {
 				dec.key = line[start:dec.pos]
+				if invalidKey(dec.key) {
+					dec.syntaxError(invalidKeyError)
+					return false
+				}
 			}
 			return true
 		}
@@ -96,6 +106,10 @@ key:
 	dec.pos = len(line)
 	if dec.pos > start {
 		dec.key = line[start:dec.pos]
+		if invalidKey(dec.key) {
+			dec.syntaxError(invalidKeyError)
+			return false
+		}
 	}
 	return true
 
