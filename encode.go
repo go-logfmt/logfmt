@@ -170,11 +170,11 @@ func invalidKeyRune(r rune) bool {
 }
 
 func invalidKeyString(key string) bool {
-	return len(key) == 0 || strings.IndexFunc(key, invalidKeyRune) != -1 || !utf8.ValidString(key)
+	return len(key) == 0 || strings.IndexFunc(key, invalidKeyRune) != -1
 }
 
 func invalidKey(key []byte) bool {
-	return len(key) == 0 || bytes.IndexFunc(key, invalidKeyRune) != -1 || !utf8.Valid(key)
+	return len(key) == 0 || bytes.IndexFunc(key, invalidKeyRune) != -1
 }
 
 func writeStringKey(w io.Writer, key string) error {
@@ -239,7 +239,7 @@ func writeStringValue(w io.Writer, value string, ok bool) error {
 	var err error
 	if ok && value == "null" {
 		_, err = io.WriteString(w, `"null"`)
-	} else if strings.IndexFunc(value, needsQuotedValueRune) != -1 || !utf8.ValidString(value) {
+	} else if strings.IndexFunc(value, needsQuotedValueRune) != -1 {
 		_, err = writeQuotedString(w, value)
 	} else {
 		_, err = io.WriteString(w, value)
@@ -249,7 +249,7 @@ func writeStringValue(w io.Writer, value string, ok bool) error {
 
 func writeBytesValue(w io.Writer, value []byte) error {
 	var err error
-	if bytes.IndexFunc(value, needsQuotedValueRune) >= 0 || !utf8.Valid(value) {
+	if bytes.IndexFunc(value, needsQuotedValueRune) != -1 {
 		_, err = writeQuotedBytes(w, value)
 	} else {
 		_, err = w.Write(value)

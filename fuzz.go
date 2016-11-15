@@ -73,7 +73,6 @@ func parse(data []byte) ([][]kv, error) {
 			kvs = append(kvs, kv{dec.Key(), dec.Value()})
 		}
 		got = append(got, kvs)
-		kvs = nil
 	}
 	return got, dec.Err()
 }

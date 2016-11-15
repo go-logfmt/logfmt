@@ -2,8 +2,10 @@ package logfmt
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
+	"unicode/utf8"
 )
 
 // A Decoder reads and decodes logfmt records from an input stream.
@@ -70,14 +72,14 @@ func (dec *Decoder) ScanKeyval() bool {
 key:
 	const invalidKeyError = "invalid key"
 
-	start := dec.pos
+	start, multibyte := dec.pos, false
 	for p, c := range line[dec.pos:] {
 		switch {
 		case c == '=':
 			dec.pos += p
 			if dec.pos > start {
 				dec.key = line[start:dec.pos]
-				if invalidKey(dec.key) {
+				if multibyte && bytes.IndexRune(dec.key, utf8.RuneError) != -1 {
 					dec.syntaxError(invalidKeyError)
 					return false
 				}
@@ -95,18 +97,20 @@ key:
 			dec.pos += p
 			if dec.pos > start {
 				dec.key = line[start:dec.pos]
-				if invalidKey(dec.key) {
+				if multibyte && bytes.IndexRune(dec.key, utf8.RuneError) != -1 {
 					dec.syntaxError(invalidKeyError)
 					return false
 				}
 			}
 			return true
+		case c >= utf8.RuneSelf:
+			multibyte = true
 		}
 	}
 	dec.pos = len(line)
 	if dec.pos > start {
 		dec.key = line[start:dec.pos]
-		if invalidKey(dec.key) {
+		if multibyte && bytes.IndexRune(dec.key, utf8.RuneError) != -1 {
 			dec.syntaxError(invalidKeyError)
 			return false
 		}
@@ -199,9 +203,6 @@ func (dec *Decoder) Key() []byte {
 func (dec *Decoder) Value() []byte {
 	return dec.value
 }
-
-// func (dec *Decoder) DecodeValue() ([]byte, error) {
-// }
 
 // Err returns the first non-EOF error that was encountered by the Scanner.
 func (dec *Decoder) Err() error {

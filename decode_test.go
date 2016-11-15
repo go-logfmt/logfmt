@@ -120,6 +120,7 @@ func TestDecoder_errors(t *testing.T) {
 		{"a=\"\\u1\"", &SyntaxError{Msg: "invalid quoted value", Line: 1, Pos: 8}},
 		{"a\ufffd=bar", &SyntaxError{Msg: "invalid key", Line: 1, Pos: 5}},
 		{"\x80=bar", &SyntaxError{Msg: "invalid key", Line: 1, Pos: 2}},
+		{"\x80", &SyntaxError{Msg: "invalid key", Line: 1, Pos: 2}},
 	}
 
 	for _, test := range tests {
