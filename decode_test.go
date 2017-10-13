@@ -28,7 +28,9 @@ func TestDecoder_scan(t *testing.T) {
 		{`y`, [][]kv{{{[]byte("y"), nil}}}},
 		{`y=f`, [][]kv{{{[]byte("y"), []byte("f")}}}},
 		{"y=\"\\tf\"", [][]kv{{{[]byte("y"), []byte("\tf")}}}},
+		{"y=\"\\\"f\\\"\"", [][]kv{{{[]byte("y"), []byte("\"f\"")}}}},
 		{"y='t\tf'", [][]kv{{{[]byte("y"), []byte("t\tf")}}}},
+		{"y='\\'f\\''", [][]kv{{{[]byte("y"), []byte("'f'")}}}},
 		{"a=1\n", [][]kv{{{[]byte("a"), []byte("1")}}}},
 		{
 			`a=1 b="bar" ƒ=2h3s r="esc\t" d x=sf   `,

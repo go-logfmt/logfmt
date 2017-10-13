@@ -165,7 +165,7 @@ qvalue:
 		switch {
 		case esc:
 			esc = false
-		case c == '\\' && qChar == '"':
+		case c == '\\':
 			hasEsc, esc = true, true
 		case c == qChar:
 			dec.pos += p + 2
