@@ -163,7 +163,7 @@ func getu4(s []byte) rune {
 }
 
 func unquoteBytes(s []byte) (t []byte, ok bool) {
-	if len(s) < 2 || s[0] != '"' || s[len(s)-1] != '"' {
+	if len(s) < 2 || (s[0] != '"' && s[0] != '\'') || (s[len(s)-1] != '"' && s[len(s)-1] != '\'') {
 		return
 	}
 	s = s[1 : len(s)-1]

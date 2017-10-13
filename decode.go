@@ -52,6 +52,7 @@ func (dec *Decoder) ScanRecord() bool {
 // returns false when decoding stops, either by reaching the end of the
 // current record or an error.
 func (dec *Decoder) ScanKeyval() bool {
+	var qChar byte
 	dec.key, dec.value = nil, nil
 	if dec.err != nil {
 		return false
@@ -89,7 +90,7 @@ key:
 				return false
 			}
 			goto equal
-		case c == '"':
+		case c == '"' || c == '\'':
 			dec.pos += p
 			dec.unexpectedByte(c)
 			return false
@@ -125,7 +126,8 @@ equal:
 	switch c := line[dec.pos]; {
 	case c <= ' ':
 		return true
-	case c == '"':
+	case c == '"' || c == '\'':
+		qChar = c
 		goto qvalue
 	}
 
@@ -133,7 +135,7 @@ equal:
 	start = dec.pos
 	for p, c := range line[dec.pos:] {
 		switch {
-		case c == '=' || c == '"':
+		case c == '=' || c == '"' || c == '\'':
 			dec.pos += p
 			dec.unexpectedByte(c)
 			return false
@@ -165,7 +167,7 @@ qvalue:
 			esc = false
 		case c == '\\':
 			hasEsc, esc = true, true
-		case c == '"':
+		case c == qChar:
 			dec.pos += p + 2
 			if hasEsc {
 				v, ok := unquoteBytes(line[start:dec.pos])
@@ -181,6 +183,7 @@ qvalue:
 					dec.value = line[start:end]
 				}
 			}
+			qChar = 0
 			return true
 		}
 	}
