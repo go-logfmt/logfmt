@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"reflect"
 	"testing"
 )
@@ -26,11 +27,26 @@ func TestSafeMarshal(t *testing.T) {
 }
 
 func TestWriteKeyStrings(t *testing.T) {
-	keygen := []func(string) interface{}{
-		func(s string) interface{} { return s },
-		func(s string) interface{} { return stringData(s) },
-		func(s string) interface{} { return stringStringer(s) },
-		func(s string) interface{} { return stringMarshaler(s) },
+	keygen := []struct {
+		name string
+		fn   func(string) interface{}
+	}{
+		{
+			name: "string",
+			fn:   func(s string) interface{} { return s },
+		},
+		{
+			name: "named-string",
+			fn:   func(s string) interface{} { return stringData(s) },
+		},
+		{
+			name: "Stringer",
+			fn:   func(s string) interface{} { return stringStringer(s) },
+		},
+		{
+			name: "TextMarshaler",
+			fn:   func(s string) interface{} { return stringMarshaler(s) },
+		},
 	}
 
 	data := []struct {
@@ -48,23 +64,30 @@ func TestWriteKeyStrings(t *testing.T) {
 		{key: " ", err: ErrInvalidKey},
 		{key: "=", err: ErrInvalidKey},
 		{key: `"`, err: ErrInvalidKey},
+		{key: "k\n", want: "k"},
+		{key: "k\nk", want: "kk"},
+		{key: "k\tk", want: "kk"},
+		{key: "k=k", want: "kk"},
+		{key: `"kk"`, want: "kk"},
 	}
 
 	for _, g := range keygen {
-		for _, d := range data {
-			w := &bytes.Buffer{}
-			key := g(d.key)
-			err := writeKey(w, key)
-			if err != d.err {
-				t.Errorf("%#v (%[1]T): got error: %v, want error: %v", key, err, d.err)
+		t.Run(g.name, func(t *testing.T) {
+			for _, d := range data {
+				w := &bytes.Buffer{}
+				key := g.fn(d.key)
+				err := writeKey(w, key)
+				if err != d.err {
+					t.Errorf("%#v: got error: %v, want error: %v", key, err, d.err)
+				}
+				if err != nil {
+					continue
+				}
+				if got, want := w.String(), d.want; got != want {
+					t.Errorf("%#v: got '%s', want '%s'", key, got, want)
+				}
 			}
-			if err != nil {
-				continue
-			}
-			if got, want := w.String(), d.want; got != want {
-				t.Errorf("%#v (%[1]T): got '%s', want '%s'", key, got, want)
-			}
-		}
+		})
 	}
 }
 
@@ -230,4 +253,21 @@ type errorMarshaler struct{}
 
 func (errorMarshaler) MarshalText() ([]byte, error) {
 	return nil, errMarshaling
+}
+
+func BenchmarkWriteStringKey(b *testing.B) {
+	keys := []string{
+		"k",
+		"caller",
+		"has space",
+		`"quoted"`,
+	}
+
+	for _, k := range keys {
+		b.Run(k, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				writeStringKey(ioutil.Discard, k)
+			}
+		})
+	}
 }
