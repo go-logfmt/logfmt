@@ -6,18 +6,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 0.3.0 - 2016-11-15
+### Changed
+- Drop invalid runes from keys instead of returning ErrInvalidKey by [@ChrisHines]
+- On panic while printing, attempt to print panic value by [@bboreham]
+
+## [0.3.0] - 2016-11-15
 ### Added
-- Pool buffers for quoted strings and byte slices by [@nussjustin](https://github.com/nussjustin)
+- Pool buffers for quoted strings and byte slices by [@nussjustin]
 ### Fixed
-- Fuzz fix, quote invalid UTF-8 values by [@judwhite](https://github.com/judwhite)
+- Fuzz fix, quote invalid UTF-8 values by [@judwhite]
 
-## 0.2.0 - 2016-05-08
+## [0.2.0] - 2016-05-08
 ### Added
-- Encoder.EncodeKeyvals
+- Encoder.EncodeKeyvals by [@ChrisHines]
 
-## 0.1.0 - 2016-03-28
+## [0.1.0] - 2016-03-28
 ### Added
-- Encoder
-- Decoder
-- MarshalKeyvals
+- Encoder by [@ChrisHines]
+- Decoder by [@ChrisHines]
+- MarshalKeyvals by [@ChrisHines]
+
+[0.3.0]: https://github.com/go-logfmt/logfmt/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/go-logfmt/logfmt/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/go-logfmt/logfmt/commits/v0.1.0
+
+[@ChrisHines]: https://github.com/ChrisHines
+[@bboreham]: https://github.com/bboreham
+[@judwhite]: https://github.com/judwhite
+[@nussjustin]: https://github.com/nussjustin
