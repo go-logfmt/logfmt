@@ -125,6 +125,10 @@ func TestMarshalKeyvals(t *testing.T) {
 		{in: kv(decimalStringer{5, 9}, "v"), want: []byte("5.9=v")},
 		{in: kv((*decimalStringer)(nil), "v"), err: logfmt.ErrNilKey},
 		{in: kv(marshalerStringer{5, 9}, "v"), want: []byte("5.9=v")},
+		{in: kv("k", panicingStringer{0}), want: []byte("k=ok")},
+		{in: kv("k", panicingStringer{1}), want: []byte("k=PANIC:panic1")},
+		// Need extra mechanism to test panic-while-printing-panicVal
+		//{in: kv("k", panicingStringer{2}), want: []byte("?")},
 	}
 
 	for _, d := range data {
@@ -194,6 +198,20 @@ type errorMarshaler struct{}
 
 func (errorMarshaler) MarshalText() ([]byte, error) {
 	return nil, errMarshal
+}
+
+type panicingStringer struct {
+	a int
+}
+
+func (p panicingStringer) String() string {
+	switch p.a {
+	case 1:
+		panic("panic1")
+	case 2:
+		panic(panicingStringer{a: 2})
+	}
+	return "ok"
 }
 
 func BenchmarkEncodeKeyval(b *testing.B) {
