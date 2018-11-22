@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Go module support by [@ChrisHines]
+
 ### Changed
 - Drop invalid runes from keys instead of returning ErrInvalidKey by [@ChrisHines]
 - On panic while printing, attempt to print panic value by [@bboreham]
