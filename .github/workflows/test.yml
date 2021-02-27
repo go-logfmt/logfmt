@@ -27,11 +27,11 @@ jobs:
       - name: Test
         run: go test ./...
       - name: Test coverage
-        run: go test -coverprofile=profile.cov ./...
+        run: go test -coverprofile="cover.out" ./... # quotes needed for powershell
       - name: Send coverage
         uses: shogo82148/actions-goveralls@v1
         with:
-          path-to-profile: profile.cov
+          path-to-profile: cover.out
           flag-name: go${{ matrix.go-version }}-${{ matrix.os }}
           parallel: true
   # notifies that all test jobs are finished.
