@@ -4,7 +4,7 @@ on:
     types: [synchronize]
   schedule:
     - cron: "0 0 1,11,21 * *"
-name: Test
+name: "Build and Test"
 jobs:
   test:
     strategy:
