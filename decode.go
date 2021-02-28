@@ -23,8 +23,11 @@ type Decoder struct {
 // The decoder introduces its own buffering and may read data from r beyond
 // the logfmt records requested.
 func NewDecoder(r io.Reader) *Decoder {
+	buf := make([]byte, 0, 64*1024)
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(buf, 1024*1024)
 	dec := &Decoder{
-		s: bufio.NewScanner(r),
+		s: scanner,
 	}
 	return dec
 }
