@@ -98,7 +98,7 @@ func writeQuotedBytes(w io.Writer, s []byte) (int, error) {
 	start := 0
 	for i := 0; i < len(s); {
 		if b := s[i]; b < utf8.RuneSelf {
-			if 0x20 <= b && b != '\\' && b != '"' {
+			if 0x20 <= b && b != '\\' && b != '"' && b != 0x7f {
 				i++
 				continue
 			}
