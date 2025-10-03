@@ -233,7 +233,7 @@ func writeValue(w io.Writer, value interface{}) error {
 }
 
 func needsQuotedValueRune(r rune) bool {
-	return r <= ' ' || r == '=' || r == '"' || r == utf8.RuneError
+	return r <= ' ' || r == '=' || r == '"' || r == 0x7f || r == utf8.RuneError
 }
 
 func writeStringValue(w io.Writer, value string, ok bool) error {

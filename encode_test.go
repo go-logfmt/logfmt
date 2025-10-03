@@ -56,9 +56,12 @@ func TestEncodeKeyval(t *testing.T) {
 		{key: "k", value: "\xbd", want: `k="\ufffd"`},
 		{key: "k", value: "\ufffd\x00", want: `k="\ufffd\u0000"`},
 		{key: "k", value: "\ufffd", want: `k="\ufffd"`},
+		{key: "k", value: "\u007f", want: `k="\u007f"`},
+		{key: "k\u007f", value: "v", want: `k=v`},
 		{key: "k", value: []byte("\ufffd\x00"), want: `k="\ufffd\u0000"`},
 		{key: "k", value: []byte("\ufffd"), want: `k="\ufffd"`},
 		{key: "k", value: []byte("\u007f"), want: `k="\u007f"`},
+		{key: []byte("k\u007f"), value: "v", want: `k=v`},
 	}
 
 	for _, d := range data {
