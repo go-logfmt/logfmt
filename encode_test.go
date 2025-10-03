@@ -14,7 +14,7 @@ import (
 
 func TestEncodeKeyval(t *testing.T) {
 	data := []struct {
-		key, value interface{}
+		key, value any
 		want       string
 		err        error
 	}{
@@ -83,7 +83,7 @@ func TestMarshalKeyvals(t *testing.T) {
 	nilPtr := (*int)(nil)
 
 	data := []struct {
-		in   []interface{}
+		in   []any
 		want []byte
 		err  error
 	}{
@@ -146,7 +146,7 @@ func TestMarshalKeyvals(t *testing.T) {
 	}
 }
 
-func kv(keyvals ...interface{}) []interface{} {
+func kv(keyvals ...any) []any {
 	return keyvals
 }
 

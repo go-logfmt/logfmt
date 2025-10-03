@@ -19,7 +19,7 @@ import (
 var hex = "0123456789abcdef"
 
 var bufferPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &bytes.Buffer{}
 	},
 }

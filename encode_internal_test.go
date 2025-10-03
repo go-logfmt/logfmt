@@ -29,23 +29,23 @@ func TestSafeMarshal(t *testing.T) {
 func TestWriteKeyStrings(t *testing.T) {
 	keygen := []struct {
 		name string
-		fn   func(string) interface{}
+		fn   func(string) any
 	}{
 		{
 			name: "string",
-			fn:   func(s string) interface{} { return s },
+			fn:   func(s string) any { return s },
 		},
 		{
 			name: "named-string",
-			fn:   func(s string) interface{} { return stringData(s) },
+			fn:   func(s string) any { return stringData(s) },
 		},
 		{
 			name: "Stringer",
-			fn:   func(s string) interface{} { return stringStringer(s) },
+			fn:   func(s string) any { return stringStringer(s) },
 		},
 		{
 			name: "TextMarshaler",
-			fn:   func(s string) interface{} { return stringMarshaler(s) },
+			fn:   func(s string) any { return stringMarshaler(s) },
 		},
 	}
 
@@ -99,7 +99,7 @@ func TestWriteKey(t *testing.T) {
 	)
 
 	data := []struct {
-		key  interface{}
+		key  any
 		want string
 		err  error
 	}{
@@ -135,12 +135,12 @@ func TestWriteKey(t *testing.T) {
 }
 
 func TestWriteValueStrings(t *testing.T) {
-	keygen := []func(string) interface{}{
-		func(s string) interface{} { return s },
-		func(s string) interface{} { return errors.New(s) },
-		func(s string) interface{} { return stringData(s) },
-		func(s string) interface{} { return stringStringer(s) },
-		func(s string) interface{} { return stringMarshaler(s) },
+	keygen := []func(string) any{
+		func(s string) any { return s },
+		func(s string) any { return errors.New(s) },
+		func(s string) any { return stringData(s) },
+		func(s string) any { return stringStringer(s) },
+		func(s string) any { return stringMarshaler(s) },
 	}
 
 	data := []struct {
@@ -188,7 +188,7 @@ func TestWriteValue(t *testing.T) {
 	)
 
 	data := []struct {
-		value interface{}
+		value any
 		want  string
 		err   error
 	}{
