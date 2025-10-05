@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"reflect"
 	"testing"
 	"time"
@@ -220,7 +220,7 @@ func (p panicingStringer) String() string {
 
 func BenchmarkEncodeKeyval(b *testing.B) {
 	b.ReportAllocs()
-	enc := logfmt.NewEncoder(ioutil.Discard)
+	enc := logfmt.NewEncoder(io.Discard)
 	for i := 0; i < b.N; i++ {
 		enc.EncodeKeyval("sk", "10")
 		enc.EncodeKeyval("some-key", "a rather long string with spaces")

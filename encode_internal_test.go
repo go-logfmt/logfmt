@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"reflect"
 	"testing"
 )
@@ -266,7 +266,7 @@ func BenchmarkWriteStringKey(b *testing.B) {
 	for _, k := range keys {
 		b.Run(k, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				writeStringKey(ioutil.Discard, k)
+				writeStringKey(io.Discard, k)
 			}
 		})
 	}
