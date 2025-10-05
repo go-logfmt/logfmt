@@ -7,6 +7,9 @@ import (
 	"io"
 	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestSafeString(t *testing.T) {
@@ -110,7 +113,6 @@ func TestWriteKey(t *testing.T) {
 		{key: (*stringerMarshaler)(nil), err: ErrNilKey},
 		{key: ptr, want: "1"},
 
-		{key: errorMarshaler{}, err: &MarshalerError{Type: reflect.TypeOf(errorMarshaler{}), Err: errMarshaling}},
 		{key: make(chan int), err: ErrUnsupportedKeyType},
 		{key: []int{}, err: ErrUnsupportedKeyType},
 		{key: map[int]int{}, err: ErrUnsupportedKeyType},
@@ -122,14 +124,43 @@ func TestWriteKey(t *testing.T) {
 	for _, d := range data {
 		w := &bytes.Buffer{}
 		err := writeKey(w, d.key)
-		if !reflect.DeepEqual(err, d.err) {
-			t.Errorf("%#v: got error: %v, want error: %v", d.key, err, d.err)
+		if diff := cmp.Diff(d.err, err, cmpopts.EquateErrors()); diff != "" {
+			t.Errorf("%#v: error value mismatch (-want,+got):\n%s", d.key, diff)
 		}
 		if err != nil {
 			continue
 		}
 		if got, want := w.String(), d.want; got != want {
 			t.Errorf("%#v: got '%s', want '%s'", d.key, got, want)
+		}
+	}
+}
+
+func TestWriteKeyMarshalError(t *testing.T) {
+	data := []struct {
+		key  any
+		want string
+		err  error
+	}{
+		{key: errorMarshaler{}, err: &MarshalerError{Type: reflect.TypeOf(errorMarshaler{}), Err: errMarshaling}},
+	}
+
+	for _, d := range data {
+		w := &bytes.Buffer{}
+		err := writeKey(w, d.key)
+
+		switch err := err.(type) {
+		case nil:
+			t.Errorf("%#v: err == nil, want: not nil", d.key)
+		case *MarshalerError:
+			if got, want := err.Type, reflect.TypeOf(errorMarshaler{}); got != want {
+				t.Errorf("%#v: MarshalerError.Type == %v, want: %v", d.key, got, want)
+			}
+			if diff := cmp.Diff(errMarshaling, err.Err, cmpopts.EquateErrors()); diff != "" {
+				t.Errorf("%#v: MarshalerError.Err value mismatch (-want,+got):\n%s", d.key, diff)
+			}
+		default:
+			t.Errorf("%#v: unexpected error, got: %q, want: a MarshalerError", d.key, err)
 		}
 	}
 }
@@ -199,7 +230,6 @@ func TestWriteValue(t *testing.T) {
 		{value: (*stringerMarshaler)(nil), want: "null"},
 		{value: ptr, want: "1"},
 
-		{value: errorMarshaler{}, err: &MarshalerError{Type: reflect.TypeOf(errorMarshaler{}), Err: errMarshaling}},
 		{value: make(chan int), err: ErrUnsupportedValueType},
 		{value: []int{}, err: ErrUnsupportedValueType},
 		{value: map[int]int{}, err: ErrUnsupportedValueType},
@@ -211,14 +241,43 @@ func TestWriteValue(t *testing.T) {
 	for _, d := range data {
 		w := &bytes.Buffer{}
 		err := writeValue(w, d.value)
-		if !reflect.DeepEqual(err, d.err) {
-			t.Errorf("%#v: got error: %v, want error: %v", d.value, err, d.err)
+		if diff := cmp.Diff(d.err, err, cmpopts.EquateErrors()); diff != "" {
+			t.Errorf("%#v: error value mismatch (-want,+got):\n%s", d.value, diff)
 		}
 		if err != nil {
 			continue
 		}
 		if got, want := w.String(), d.want; got != want {
 			t.Errorf("%#v: got '%s', want '%s'", d.value, got, want)
+		}
+	}
+}
+
+func TestWriteValueMarshalError(t *testing.T) {
+	data := []struct {
+		value any
+		want  string
+		err   error
+	}{
+		{value: errorMarshaler{}, err: &MarshalerError{Type: reflect.TypeOf(errorMarshaler{}), Err: errMarshaling}},
+	}
+
+	for _, d := range data {
+		w := &bytes.Buffer{}
+		err := writeValue(w, d.value)
+
+		switch err := err.(type) {
+		case nil:
+			t.Errorf("%#v: err == nil, want: not nil", d.value)
+		case *MarshalerError:
+			if got, want := err.Type, reflect.TypeOf(errorMarshaler{}); got != want {
+				t.Errorf("%#v: MarshalerError.Type == %v, want: %v", d.value, got, want)
+			}
+			if diff := cmp.Diff(errMarshaling, err.Err, cmpopts.EquateErrors()); diff != "" {
+				t.Errorf("%#v: MarshalerError.Err value mismatch (-want,+got):\n%s", d.value, diff)
+			}
+		default:
+			t.Errorf("%#v: unexpected error, got: %q, want: a MarshalerError", d.value, err)
 		}
 	}
 }
