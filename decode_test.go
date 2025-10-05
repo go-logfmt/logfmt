@@ -7,6 +7,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 type kv struct {
@@ -155,6 +158,35 @@ func TestDecoder_scan(t *testing.T) {
 }
 
 func TestDecoder_errors(t *testing.T) {
+	tests := []struct {
+		data string
+		dec  func(string) *Decoder
+		want error
+	}{
+		{
+			data: "a=1\nb=2",
+			dec: func(s string) *Decoder {
+				dec := NewDecoderSize(strings.NewReader(s), 1)
+				return dec
+			},
+			want: bufio.ErrTooLong,
+		},
+	}
+
+	for _, test := range tests {
+		dec := test.dec(test.data)
+
+		for dec.ScanRecord() {
+			for dec.ScanKeyval() {
+			}
+		}
+		if diff := cmp.Diff(test.want, dec.Err(), cmpopts.EquateErrors()); diff != "" {
+			t.Errorf("%#v: Decoder.Err() value mismatch (-want,+got):\n%s", test.data, diff)
+		}
+	}
+}
+
+func TestDecoder_SyntaxError(t *testing.T) {
 	defaultDecoder := func(s string) *Decoder { return NewDecoder(strings.NewReader(s)) }
 	tests := []struct {
 		data string
@@ -231,14 +263,6 @@ func TestDecoder_errors(t *testing.T) {
 			dec:  defaultDecoder,
 			want: &SyntaxError{Msg: "invalid key", Line: 1, Pos: 2},
 		},
-		{
-			data: "a=1\nb=2",
-			dec: func(s string) *Decoder {
-				dec := NewDecoderSize(strings.NewReader(s), 1)
-				return dec
-			},
-			want: bufio.ErrTooLong,
-		},
 	}
 
 	for _, test := range tests {
@@ -248,8 +272,16 @@ func TestDecoder_errors(t *testing.T) {
 			for dec.ScanKeyval() {
 			}
 		}
-		if got, want := dec.Err(), test.want; !reflect.DeepEqual(got, want) {
-			t.Errorf("got: %v, want: %v", got, want)
+
+		switch got := dec.Err().(type) {
+		case nil:
+			t.Errorf("%#v: dec.Err() == nil, want: *SyntaxError", test.data)
+		case *SyntaxError:
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("%#v: dec.Err() mismatch (-want,+got):\n%s", test.data, diff)
+			}
+		default:
+			t.Errorf("%#v: dec.Err().(type) == %T, want: *SyntaxError", test.data, got)
 		}
 	}
 }

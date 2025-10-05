@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestSafeString(t *testing.T) {
@@ -29,23 +32,23 @@ func TestSafeMarshal(t *testing.T) {
 func TestWriteKeyStrings(t *testing.T) {
 	keygen := []struct {
 		name string
-		fn   func(string) interface{}
+		fn   func(string) any
 	}{
 		{
 			name: "string",
-			fn:   func(s string) interface{} { return s },
+			fn:   func(s string) any { return s },
 		},
 		{
 			name: "named-string",
-			fn:   func(s string) interface{} { return stringData(s) },
+			fn:   func(s string) any { return stringData(s) },
 		},
 		{
 			name: "Stringer",
-			fn:   func(s string) interface{} { return stringStringer(s) },
+			fn:   func(s string) any { return stringStringer(s) },
 		},
 		{
 			name: "TextMarshaler",
-			fn:   func(s string) interface{} { return stringMarshaler(s) },
+			fn:   func(s string) any { return stringMarshaler(s) },
 		},
 	}
 
@@ -99,7 +102,7 @@ func TestWriteKey(t *testing.T) {
 	)
 
 	data := []struct {
-		key  interface{}
+		key  any
 		want string
 		err  error
 	}{
@@ -110,7 +113,6 @@ func TestWriteKey(t *testing.T) {
 		{key: (*stringerMarshaler)(nil), err: ErrNilKey},
 		{key: ptr, want: "1"},
 
-		{key: errorMarshaler{}, err: &MarshalerError{Type: reflect.TypeOf(errorMarshaler{}), Err: errMarshaling}},
 		{key: make(chan int), err: ErrUnsupportedKeyType},
 		{key: []int{}, err: ErrUnsupportedKeyType},
 		{key: map[int]int{}, err: ErrUnsupportedKeyType},
@@ -122,8 +124,8 @@ func TestWriteKey(t *testing.T) {
 	for _, d := range data {
 		w := &bytes.Buffer{}
 		err := writeKey(w, d.key)
-		if !reflect.DeepEqual(err, d.err) {
-			t.Errorf("%#v: got error: %v, want error: %v", d.key, err, d.err)
+		if diff := cmp.Diff(d.err, err, cmpopts.EquateErrors()); diff != "" {
+			t.Errorf("%#v: error value mismatch (-want,+got):\n%s", d.key, diff)
 		}
 		if err != nil {
 			continue
@@ -134,13 +136,42 @@ func TestWriteKey(t *testing.T) {
 	}
 }
 
+func TestWriteKeyMarshalError(t *testing.T) {
+	data := []struct {
+		key  any
+		want string
+		err  error
+	}{
+		{key: errorMarshaler{}, err: &MarshalerError{Type: reflect.TypeOf(errorMarshaler{}), Err: errMarshaling}},
+	}
+
+	for _, d := range data {
+		w := &bytes.Buffer{}
+		err := writeKey(w, d.key)
+
+		switch err := err.(type) {
+		case nil:
+			t.Errorf("%#v: err == nil, want: not nil", d.key)
+		case *MarshalerError:
+			if got, want := err.Type, reflect.TypeOf(errorMarshaler{}); got != want {
+				t.Errorf("%#v: MarshalerError.Type == %v, want: %v", d.key, got, want)
+			}
+			if diff := cmp.Diff(errMarshaling, err.Err, cmpopts.EquateErrors()); diff != "" {
+				t.Errorf("%#v: MarshalerError.Err value mismatch (-want,+got):\n%s", d.key, diff)
+			}
+		default:
+			t.Errorf("%#v: unexpected error, got: %q, want: a MarshalerError", d.key, err)
+		}
+	}
+}
+
 func TestWriteValueStrings(t *testing.T) {
-	keygen := []func(string) interface{}{
-		func(s string) interface{} { return s },
-		func(s string) interface{} { return errors.New(s) },
-		func(s string) interface{} { return stringData(s) },
-		func(s string) interface{} { return stringStringer(s) },
-		func(s string) interface{} { return stringMarshaler(s) },
+	keygen := []func(string) any{
+		func(s string) any { return s },
+		func(s string) any { return errors.New(s) },
+		func(s string) any { return stringData(s) },
+		func(s string) any { return stringStringer(s) },
+		func(s string) any { return stringMarshaler(s) },
 	}
 
 	data := []struct {
@@ -188,7 +219,7 @@ func TestWriteValue(t *testing.T) {
 	)
 
 	data := []struct {
-		value interface{}
+		value any
 		want  string
 		err   error
 	}{
@@ -199,7 +230,6 @@ func TestWriteValue(t *testing.T) {
 		{value: (*stringerMarshaler)(nil), want: "null"},
 		{value: ptr, want: "1"},
 
-		{value: errorMarshaler{}, err: &MarshalerError{Type: reflect.TypeOf(errorMarshaler{}), Err: errMarshaling}},
 		{value: make(chan int), err: ErrUnsupportedValueType},
 		{value: []int{}, err: ErrUnsupportedValueType},
 		{value: map[int]int{}, err: ErrUnsupportedValueType},
@@ -211,14 +241,43 @@ func TestWriteValue(t *testing.T) {
 	for _, d := range data {
 		w := &bytes.Buffer{}
 		err := writeValue(w, d.value)
-		if !reflect.DeepEqual(err, d.err) {
-			t.Errorf("%#v: got error: %v, want error: %v", d.value, err, d.err)
+		if diff := cmp.Diff(d.err, err, cmpopts.EquateErrors()); diff != "" {
+			t.Errorf("%#v: error value mismatch (-want,+got):\n%s", d.value, diff)
 		}
 		if err != nil {
 			continue
 		}
 		if got, want := w.String(), d.want; got != want {
 			t.Errorf("%#v: got '%s', want '%s'", d.value, got, want)
+		}
+	}
+}
+
+func TestWriteValueMarshalError(t *testing.T) {
+	data := []struct {
+		value any
+		want  string
+		err   error
+	}{
+		{value: errorMarshaler{}, err: &MarshalerError{Type: reflect.TypeOf(errorMarshaler{}), Err: errMarshaling}},
+	}
+
+	for _, d := range data {
+		w := &bytes.Buffer{}
+		err := writeValue(w, d.value)
+
+		switch err := err.(type) {
+		case nil:
+			t.Errorf("%#v: err == nil, want: not nil", d.value)
+		case *MarshalerError:
+			if got, want := err.Type, reflect.TypeOf(errorMarshaler{}); got != want {
+				t.Errorf("%#v: MarshalerError.Type == %v, want: %v", d.value, got, want)
+			}
+			if diff := cmp.Diff(errMarshaling, err.Err, cmpopts.EquateErrors()); diff != "" {
+				t.Errorf("%#v: MarshalerError.Err value mismatch (-want,+got):\n%s", d.value, diff)
+			}
+		default:
+			t.Errorf("%#v: unexpected error, got: %q, want: a MarshalerError", d.value, err)
 		}
 	}
 }
@@ -266,7 +325,7 @@ func BenchmarkWriteStringKey(b *testing.B) {
 	for _, k := range keys {
 		b.Run(k, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				writeStringKey(ioutil.Discard, k)
+				writeStringKey(io.Discard, k)
 			}
 		})
 	}
