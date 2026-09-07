@@ -197,20 +197,20 @@ func writeBytesKey(w io.Writer, key []byte) error {
 func writeValue(w io.Writer, value any) error {
 	switch v := value.(type) {
 	case nil:
-		return writeBytesValue(w, null)
+		return writeBytesValue(w, null, false)
 	case string:
 		return writeStringValue(w, v, true)
 	case []byte:
-		return writeBytesValue(w, v)
+		return writeBytesValue(w, v, true)
 	case encoding.TextMarshaler:
 		vb, err := safeMarshal(v)
 		if err != nil {
 			return err
 		}
 		if vb == nil {
-			vb = null
+			return writeBytesValue(w, null, false)
 		}
-		return writeBytesValue(w, vb)
+		return writeBytesValue(w, vb, true)
 	case error:
 		se, ok := safeError(v)
 		return writeStringValue(w, se, ok)
@@ -224,7 +224,7 @@ func writeValue(w io.Writer, value any) error {
 			return ErrUnsupportedValueType
 		case reflect.Pointer:
 			if rvalue.IsNil() {
-				return writeBytesValue(w, null)
+				return writeBytesValue(w, null, false)
 			}
 			return writeValue(w, rvalue.Elem().Interface())
 		}
@@ -248,9 +248,12 @@ func writeStringValue(w io.Writer, value string, ok bool) error {
 	return err
 }
 
-func writeBytesValue(w io.Writer, value []byte) error {
+func writeBytesValue(w io.Writer, value []byte, ok bool) error {
 	var err error
-	if bytes.IndexFunc(value, needsQuotedValueRune) != -1 {
+	// Quote a real "null" so it stays distinct from the bare null that means no value.
+	if ok && bytes.Equal(value, null) {
+		_, err = io.WriteString(w, `"null"`)
+	} else if bytes.IndexFunc(value, needsQuotedValueRune) != -1 {
 		_, err = writeQuotedBytes(w, value)
 	} else {
 		_, err = w.Write(value)
