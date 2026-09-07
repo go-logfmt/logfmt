@@ -23,6 +23,8 @@ func TestEncodeKeyval(t *testing.T) {
 		{key: `\`, value: "v", want: `\=v`},
 		{key: "k", value: "", want: "k="},
 		{key: "k", value: "null", want: `k="null"`},
+		{key: "k", value: []byte("null"), want: `k="null"`},
+		{key: "k", value: nullMarshaler{}, want: `k="null"`},
 		{key: "k", value: "<nil>", want: `k=<nil>`},
 		{key: "k", value: true, want: "k=true"},
 		{key: "k", value: 1, want: "k=1"},
@@ -97,6 +99,8 @@ func TestMarshalKeyvals(t *testing.T) {
 		{in: kv("k", nil), want: []byte("k=null")},
 		{in: kv("k", ""), want: []byte("k=")},
 		{in: kv("k", "null"), want: []byte(`k="null"`)},
+		{in: kv("k", []byte("null")), want: []byte(`k="null"`)},
+		{in: kv("k", nullMarshaler{}), want: []byte(`k="null"`)},
 		{in: kv("k", "v"), want: []byte("k=v")},
 		{in: kv("k", true), want: []byte("k=true")},
 		{in: kv("k", 1), want: []byte("k=1")},
@@ -153,6 +157,12 @@ func kv(keyvals ...any) []any {
 type structData struct {
 	A string `logfmt:"fieldA"`
 	B int
+}
+
+type nullMarshaler struct{}
+
+func (nullMarshaler) MarshalText() ([]byte, error) {
+	return []byte("null"), nil
 }
 
 type nilMarshaler int
