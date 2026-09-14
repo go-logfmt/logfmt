@@ -165,12 +165,15 @@ func writeKey(w io.Writer, key any) error {
 	}
 }
 
-// keyRuneFilter returns r for all valid key runes, and -1 for all invalid key
-// runes. When used as the mapping function for strings.Map and bytes.Map
-// functions it causes them to remove invalid key runes from strings or byte
-// slices respectively.
+// keyRuneFilter returns r for all valid key runes. Control characters
+// (including DEL) are replaced with '_' so they stay visible in the log
+// line instead of silently disappearing. Space, '=', '"', and invalid UTF-8
+// are dropped because they would break logfmt key syntax.
 func keyRuneFilter(r rune) rune {
-	if r <= ' ' || r == '=' || r == '"' || r == 0x7f || r == utf8.RuneError {
+	if r < ' ' || r == 0x7f {
+		return '_'
+	}
+	if r == ' ' || r == '=' || r == '"' || r == utf8.RuneError {
 		return -1
 	}
 	return r
