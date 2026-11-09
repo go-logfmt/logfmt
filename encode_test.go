@@ -146,6 +146,20 @@ func TestMarshalKeyvals(t *testing.T) {
 	}
 }
 
+func TestEncodeKeyvalsDoesNotOverwriteBackingSlice(t *testing.T) {
+	keyvals := []any{"first", 1, "last", 2}
+	var out bytes.Buffer
+	if err := logfmt.NewEncoder(&out).EncodeKeyvals(keyvals[:3]...); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := out.String(), "first=1 last=null"; got != want {
+		t.Errorf("encoded record = %q, want %q", got, want)
+	}
+	if got := keyvals[3]; got != 2 {
+		t.Errorf("keyvals[3] = %v, want 2", got)
+	}
+}
+
 func kv(keyvals ...any) []any {
 	return keyvals
 }
