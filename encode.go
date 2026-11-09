@@ -76,11 +76,12 @@ func (enc *Encoder) EncodeKeyvals(keyvals ...any) error {
 	if len(keyvals) == 0 {
 		return nil
 	}
-	if len(keyvals)%2 == 1 {
-		keyvals = append(keyvals, nil)
-	}
 	for i := 0; i < len(keyvals); i += 2 {
-		k, v := keyvals[i], keyvals[i+1]
+		k := keyvals[i]
+		var v any
+		if i+1 < len(keyvals) {
+			v = keyvals[i+1]
+		}
 		err := enc.EncodeKeyval(k, v)
 		if err == ErrUnsupportedKeyType {
 			continue
